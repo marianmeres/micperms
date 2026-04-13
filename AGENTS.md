@@ -79,3 +79,11 @@ tracks are stopped immediately.
 - `getUserMedia` returns `NotAllowedError` without prompting unless native app implements `WKUIDelegate` with `decisionHandler(.grant)`
 - Deep-link URI schemes are silently swallowed; only `webkit.messageHandlers` bridge works
 - Recovery requires native layer to fire custom `app-resumed` event
+
+## Platform Quirks (Android WebView)
+
+- **Lying Permissions API.** After the user denies the OS mic prompt, `navigator.permissions.query({ name: "microphone" }).state` returns `"prompt"` (not `"denied"`), while `getUserMedia` correctly rejects with `NotAllowedError`. `getUserMedia` is the only ground truth.
+- **Sticky denial mitigation.** `createMicPerms` tracks an internal `observedDeniedAt` flag set whenever `requestPermission()` (or the `onPermissionChange` callback) returns `"denied"`. While set, `check()` coerces incoming `"prompt"` / `"unknown"` from the Permissions API back to `"denied"`. Cleared on any `"granted"` observation, and on `openSettings()` (user is on their way to change the OS setting). Do not remove without an alternative — it is what prevents the Android denial loop.
+- **Passive triggers must never call `getUserMedia`.** The internal `visibilitychange` and `app-resumed` handlers call `check()` only. `getUserMedia` rejection on Android can transiently flip document visibility — combined with auto-escalation this used to fuel an unbounded loop. `recheck()` (which does escalate) remains opt-in for explicit consumer code.
+- **Re-entrancy / debounce.** `check()` and `request()` no-op while `state.busy === true`. Passive handlers also skip if a check ran within `MIN_PASSIVE_INTERVAL_MS` (500ms).
+- Recovery from denial requires the native layer to fire the configured `appResumedEvent` (default `"app-resumed"`) after `openSettings()` returns the user to the app.

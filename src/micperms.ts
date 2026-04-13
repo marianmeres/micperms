@@ -241,7 +241,7 @@ export function detectBridge(
 		if (platform === "android-webview") {
 			return (
 				typeof _g[androidBridgeObject]?.[androidBridgeMethod] ===
-				"function"
+					"function"
 			);
 		}
 	} catch {
@@ -337,9 +337,7 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 			check();
 		};
 		_g.addEventListener(appResumedEvent, handleAppResumed);
-		cleanups.push(() =>
-			_g.removeEventListener(appResumedEvent, handleAppResumed),
-		);
+		cleanups.push(() => _g.removeEventListener(appResumedEvent, handleAppResumed));
 	}
 
 	if (typeof _g.document !== "undefined") {
@@ -354,7 +352,7 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 			_g.document.removeEventListener(
 				"visibilitychange",
 				handleVisibility,
-			),
+			)
 		);
 	}
 
@@ -368,8 +366,7 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 			const result = await adapter.queryPermission();
 			// If Permissions API is unsupported (null), preserve prior status.
 			const incoming = result ?? store.get().status;
-			const status =
-				result === null ? incoming : reconcileIncomingStatus(incoming);
+			const status = result === null ? incoming : reconcileIncomingStatus(incoming);
 			store.update((s) => ({
 				...s,
 				status,
@@ -378,8 +375,7 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 			}));
 			return status;
 		} catch (e: unknown) {
-			const message =
-				e instanceof Error ? e.message : "Permission check failed";
+			const message = e instanceof Error ? e.message : "Permission check failed";
 			log.error("micperms check failed", e);
 			store.update((s) => ({
 				...s,
@@ -405,8 +401,7 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 			}));
 			return status;
 		} catch (e: unknown) {
-			const message =
-				e instanceof Error ? e.message : "Permission request failed";
+			const message = e instanceof Error ? e.message : "Permission request failed";
 			log.error("micperms request failed", e);
 			store.update((s) => ({
 				...s,
