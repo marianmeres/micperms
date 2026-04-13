@@ -6,11 +6,7 @@ import { createStore } from "@marianmeres/store";
 // ---------------------------------------------------------------------------
 
 /** Microphone permission status. */
-export type MicPermissionStatus =
-	| "unknown"
-	| "prompt"
-	| "granted"
-	| "denied";
+export type MicPermissionStatus = "unknown" | "prompt" | "granted" | "denied";
 
 /** Detected platform context. */
 export type MicPlatformContext =
@@ -49,7 +45,7 @@ export interface MicPermsBrowserAdapter {
 	supportsPermissionsApi(): boolean;
 	/** Listen for Permissions API `onchange`. Return cleanup fn, or `null` if unsupported. */
 	onPermissionChange(
-		cb: (status: MicPermissionStatus) => void
+		cb: (status: MicPermissionStatus) => void,
 	): (() => void) | null;
 }
 
@@ -150,7 +146,7 @@ export function createDefaultAdapter(): MicPermsBrowserAdapter {
 	}
 
 	function onPermissionChange(
-		cb: (status: MicPermissionStatus) => void
+		cb: (status: MicPermissionStatus) => void,
 	): (() => void) | null {
 		if (!supportsPermissionsApi()) return null;
 		let permStatus: PermissionStatus | null = null;
@@ -190,9 +186,7 @@ const _g = globalThis as any;
  * `webkit.messageHandlers`, Android bridge object, PWA standalone mode,
  * or falls back to `"browser"`.
  */
-export function detectPlatform(
-	config: MicPermsConfig
-): MicPlatformContext {
+export function detectPlatform(config: MicPermsConfig): MicPlatformContext {
 	if (config.platform) return config.platform;
 
 	try {
@@ -234,12 +228,11 @@ export function detectPlatform(
  */
 export function detectBridge(
 	platform: MicPlatformContext,
-	config: MicPermsConfig
+	config: MicPermsConfig,
 ): boolean {
 	const iosBridgeHandler = config.iosBridgeHandler ?? "openAppSettings";
 	const androidBridgeObject = config.androidBridgeObject ?? "Android";
-	const androidBridgeMethod =
-		config.androidBridgeMethod ?? "openAppSettings";
+	const androidBridgeMethod = config.androidBridgeMethod ?? "openAppSettings";
 
 	try {
 		if (platform === "ios-webview") {
@@ -274,8 +267,7 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 	const cfg: MicPermsConfig = { ...config };
 	const iosBridgeHandler = cfg.iosBridgeHandler ?? "openAppSettings";
 	const androidBridgeObject = cfg.androidBridgeObject ?? "Android";
-	const androidBridgeMethod =
-		cfg.androidBridgeMethod ?? "openAppSettings";
+	const androidBridgeMethod = cfg.androidBridgeMethod ?? "openAppSettings";
 	const appResumedEvent = cfg.appResumedEvent ?? "app-resumed";
 	const log = cfg.logger ?? DEFAULT_LOGGER;
 
@@ -295,47 +287,74 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 	let destroyed = false;
 	const cleanups: (() => void)[] = [];
 
+	// Sticky observed-denial. Set when getUserMedia (or onPermissionChange)
+	// reports "denied" — coerces lying Permissions API results until cleared
+	// by a "granted" observation or by openSettings().
+	let observedDeniedAt: number | null = null;
+	const MIN_PASSIVE_INTERVAL_MS = 500;
+
+	function reconcileIncomingStatus(
+		incoming: MicPermissionStatus,
+	): MicPermissionStatus {
+		if (incoming === "granted") {
+			observedDeniedAt = null;
+			return "granted";
+		}
+		if (incoming === "denied") {
+			observedDeniedAt = Date.now();
+			return "denied";
+		}
+		if (observedDeniedAt !== null) {
+			return "denied";
+		}
+		return incoming;
+	}
+
 	// --- event listeners ---
 
 	const permCleanup = adapter.onPermissionChange(
 		(status: MicPermissionStatus): void => {
 			if (!destroyed) {
+				const reconciled = reconcileIncomingStatus(status);
 				store.update((s) => ({
 					...s,
-					status,
+					status: reconciled,
 					lastCheckedAt: Date.now(),
 				}));
 			}
-		}
+		},
 	);
 	if (permCleanup) cleanups.push(permCleanup);
 
+	function shouldSkipPassive(): boolean {
+		const last = store.get().lastCheckedAt ?? 0;
+		return Date.now() - last < MIN_PASSIVE_INTERVAL_MS;
+	}
+
 	if (typeof _g.addEventListener === "function") {
 		const handleAppResumed = (): void => {
-			if (!destroyed) recheck();
+			if (destroyed || shouldSkipPassive()) return;
+			check();
 		};
 		_g.addEventListener(appResumedEvent, handleAppResumed);
 		cleanups.push(() =>
-			_g.removeEventListener(appResumedEvent, handleAppResumed)
+			_g.removeEventListener(appResumedEvent, handleAppResumed),
 		);
 	}
 
 	if (typeof _g.document !== "undefined") {
 		const handleVisibility = (): void => {
-			if (
-				!destroyed &&
-				_g.document.visibilityState === "visible" &&
-				store.get().status === "denied"
-			) {
-				recheck();
-			}
+			if (destroyed) return;
+			if (_g.document.visibilityState !== "visible") return;
+			if (shouldSkipPassive()) return;
+			check();
 		};
 		_g.document.addEventListener("visibilitychange", handleVisibility);
 		cleanups.push(() =>
 			_g.document.removeEventListener(
 				"visibilitychange",
-				handleVisibility
-			)
+				handleVisibility,
+			),
 		);
 	}
 
@@ -343,10 +362,14 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 
 	async function check(): Promise<MicPermissionStatus> {
 		if (destroyed) return store.get().status;
+		if (store.get().busy) return store.get().status;
 		store.update((s) => ({ ...s, busy: true, error: null }));
 		try {
 			const result = await adapter.queryPermission();
-			const status = result ?? store.get().status;
+			// If Permissions API is unsupported (null), preserve prior status.
+			const incoming = result ?? store.get().status;
+			const status =
+				result === null ? incoming : reconcileIncomingStatus(incoming);
 			store.update((s) => ({
 				...s,
 				status,
@@ -369,9 +392,11 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 
 	async function request(): Promise<MicPermissionStatus> {
 		if (destroyed) return store.get().status;
+		if (store.get().busy) return store.get().status;
 		store.update((s) => ({ ...s, busy: true, error: null }));
 		try {
-			const status = await adapter.requestPermission();
+			const result = await adapter.requestPermission();
+			const status = reconcileIncomingStatus(result);
 			store.update((s) => ({
 				...s,
 				status,
@@ -381,9 +406,7 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 			return status;
 		} catch (e: unknown) {
 			const message =
-				e instanceof Error
-					? e.message
-					: "Permission request failed";
+				e instanceof Error ? e.message : "Permission request failed";
 			log.error("micperms request failed", e);
 			store.update((s) => ({
 				...s,
@@ -399,10 +422,14 @@ export function createMicPerms(config?: MicPermsConfig): MicPerms {
 		try {
 			if (platform === "ios-webview") {
 				_g.webkit.messageHandlers[iosBridgeHandler].postMessage({});
+				// User is on their way to change OS settings — clear sticky denial
+				// so a genuine "granted" or "prompt" can be observed on return.
+				observedDeniedAt = null;
 				return true;
 			}
 			if (platform === "android-webview") {
 				_g[androidBridgeObject][androidBridgeMethod]();
+				observedDeniedAt = null;
 				return true;
 			}
 		} catch (e) {

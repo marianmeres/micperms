@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
@@ -23,8 +23,7 @@
 				--btn: #264653;
 				--btn-fg: #fff;
 				--btn-hover: #1b3a4b;
-				--mono:
-					"SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+				--mono: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
 				--sans: system-ui, -apple-system, sans-serif;
 			}
 			body {
@@ -238,8 +237,8 @@
 
 		<script type="module">
 			import {
-				createMicPerms,
 				createDefaultAdapter,
+				createMicPerms,
 				detectPlatform,
 			} from "./dist/bundle.js";
 
@@ -258,9 +257,7 @@
 				logLines.push(line);
 				logEl.textContent = logLines.join("\n");
 				logCountEl.textContent = logLines.length;
-				requestAnimationFrame(() =>
-					logEl.scrollTo(0, logEl.scrollHeight),
-				);
+				requestAnimationFrame(() => logEl.scrollTo(0, logEl.scrollHeight));
 			}
 
 			document.getElementById("btn-copy").onclick = async () => {
@@ -315,7 +312,9 @@
 					: "none";
 				if (s.lastCheckedAt) {
 					const d = new Date(s.lastCheckedAt);
-					els.checked.textContent = `${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+					els.checked.textContent = `${
+						String(d.getMinutes()).padStart(2, "0")
+					}:${String(d.getSeconds()).padStart(2, "0")}`;
 				} else {
 					els.checked.textContent = "never";
 				}
@@ -337,11 +336,11 @@
 				log(`state -> ${s.status} (busy=${s.busy})`);
 			});
 
-			document.getElementById("platform-badge").textContent =
-				mic.get().platform;
+			document.getElementById("platform-badge").textContent = mic.get().platform;
 			log(`userAgent: ${navigator.userAgent}`);
 			log(
-				`mediaDevices: ${!!navigator.mediaDevices}, getUserMedia: ${!!navigator.mediaDevices?.getUserMedia}`,
+				`mediaDevices: ${!!navigator.mediaDevices}, getUserMedia: ${!!navigator
+					.mediaDevices?.getUserMedia}`,
 			);
 			log(`isSecureContext: ${window.isSecureContext}`);
 
@@ -378,16 +377,17 @@
 			document.getElementById("btn-enumerate").onclick = async () => {
 				log("--- enumerateDevices ---");
 				try {
-					const devices =
-						await navigator.mediaDevices.enumerateDevices();
+					const devices = await navigator.mediaDevices.enumerateDevices();
 					const audioInputs = devices.filter(
 						(d) => d.kind === "audioinput",
 					);
 					log(`Found ${audioInputs.length} audio input(s):`);
 					audioInputs.forEach((d, i) =>
 						log(
-							`  [${i}]: "${d.label || "(no label)"}" id=${d.deviceId.slice(0, 8)}...`,
-						),
+							`  [${i}]: "${d.label || "(no label)"}" id=${
+								d.deviceId.slice(0, 8)
+							}...`,
+						)
 					);
 				} catch (e) {
 					log(`enumerateDevices error: ${e.message}`);
@@ -401,14 +401,18 @@
 				if (wk?.messageHandlers) {
 					const handlers = Object.keys(wk.messageHandlers);
 					log(
-						`messageHandlers (${handlers.length}): ${handlers.join(", ") || "(none enumerable)"}`,
+						`messageHandlers (${handlers.length}): ${
+							handlers.join(", ") || "(none enumerable)"
+						}`,
 					);
-					for (const name of [
-						"openSettings",
-						"openAppSettings",
-						"nativeAction",
-						"bridge",
-					]) {
+					for (
+						const name of [
+							"openSettings",
+							"openAppSettings",
+							"nativeAction",
+							"bridge",
+						]
+					) {
 						log(
 							`  .${name}: ${wk.messageHandlers[name] ? "EXISTS" : "no"}`,
 						);
@@ -432,7 +436,7 @@
 					tracks.forEach((t, i) =>
 						log(
 							`  track[${i}]: "${t.label}", enabled=${t.enabled}, muted=${t.muted}`,
-						),
+						)
 					);
 					tracks.forEach((t) => t.stop());
 					log("All tracks stopped");

@@ -31,8 +31,8 @@ const mic = createMicPerms();
 
 // Reactive subscription (Svelte $store compatible)
 mic.subscribe((state) => {
-    console.log(state.status);   // "unknown" | "prompt" | "granted" | "denied"
-    console.log(state.platform); // "browser" | "pwa" | "ios-webview" | "android-webview"
+	console.log(state.status); // "unknown" | "prompt" | "granted" | "denied"
+	console.log(state.platform); // "browser" | "pwa" | "ios-webview" | "android-webview"
 });
 
 // Check current permission (via Permissions API)
@@ -55,15 +55,30 @@ mic.destroy();
 
 ```typescript
 const mic = createMicPerms({
-    platform: "ios-webview",           // override auto-detection
-    iosBridgeHandler: "openAppSettings",  // iOS bridge handler name
-    androidBridgeObject: "Android",       // Android bridge object on window
-    androidBridgeMethod: "openAppSettings",
-    appResumedEvent: "app-resumed",       // event fired by native layer on return
-    adapter: myCustomAdapter,             // injectable for testing
-    logger: console,                      // default: noop
+	platform: "ios-webview", // override auto-detection
+	iosBridgeHandler: "openAppSettings", // iOS bridge handler name
+	androidBridgeObject: "Android", // Android bridge object on window
+	androidBridgeMethod: "openAppSettings",
+	appResumedEvent: "app-resumed", // event fired by native layer on return
+	adapter: myCustomAdapter, // injectable for testing
+	logger: console, // default: noop
 });
 ```
+
+## Semantics
+
+- **Sticky denial.** Once `getUserMedia` (via `request()`) has observed `"denied"`,
+  that state is cached internally and silent `check()` calls will not downgrade it
+  to `"prompt"` / `"unknown"`. Some platforms (Android WebView) report `"prompt"`
+  from the Permissions API even after the user denied the OS mic prompt — that
+  lying value is ignored. The sticky flag is cleared by any `"granted"` observation
+  and by `openSettings()` (since the user is on their way to change the OS setting).
+- **Passive triggers never prompt.** Internal listeners for `visibilitychange` and
+  `app-resumed` only call `check()` (silent). They never invoke `getUserMedia`,
+  which would produce an unexpected OS prompt.
+- **`recheck()` is the only silent escalation.** It calls `check()` and, if the
+  result is ambiguous (`"prompt"` / `"unknown"`), escalates to `request()`. Only
+  your code can trigger it — call it in response to a user gesture, not on resume.
 
 ## API
 

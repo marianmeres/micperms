@@ -1,11 +1,13 @@
 # @marianmeres/micperms — Agent Guide
 
 ## Quick Reference
+
 - **Stack**: Deno, TypeScript
 - **Runtime dependency**: `@marianmeres/store` (reactive store with Svelte-compatible `.subscribe()`)
 - **Test**: `deno task test` | **Build example**: `deno task build:example`
 
 ## Project Structure
+
 ```
 /src
   mod.ts          — Public exports (re-exports micperms.ts)
@@ -28,33 +30,33 @@ tracks are stopped immediately.
 
 ## Key Concepts
 
-| Concept | Description |
-|---------|-------------|
-| **Adapter pattern** | `MicPermsBrowserAdapter` abstracts browser APIs; inject mock for testing |
-| **Platform detection** | Auto-detects: `browser`, `pwa`, `ios-webview`, `android-webview` |
-| **Bridge detection** | Checks for iOS `webkit.messageHandlers` or Android JS interface |
-| **Reactive state** | `@marianmeres/store` powers `subscribe()` (Svelte `$store` compatible) |
+| Concept                | Description                                                              |
+| ---------------------- | ------------------------------------------------------------------------ |
+| **Adapter pattern**    | `MicPermsBrowserAdapter` abstracts browser APIs; inject mock for testing |
+| **Platform detection** | Auto-detects: `browser`, `pwa`, `ios-webview`, `android-webview`         |
+| **Bridge detection**   | Checks for iOS `webkit.messageHandlers` or Android JS interface          |
+| **Reactive state**     | `@marianmeres/store` powers `subscribe()` (Svelte `$store` compatible)   |
 
 ## Public API
 
-| Export | Type | Purpose |
-|--------|------|---------|
-| `createMicPerms(config?)` | Factory | Main entry point, returns `MicPerms` instance |
-| `createDefaultAdapter()` | Factory | Real browser adapter (Permissions API + getUserMedia) |
-| `detectPlatform(config)` | Helper | Returns `MicPlatformContext` |
-| `detectBridge(platform, config)` | Helper | Returns `boolean` |
+| Export                           | Type    | Purpose                                               |
+| -------------------------------- | ------- | ----------------------------------------------------- |
+| `createMicPerms(config?)`        | Factory | Main entry point, returns `MicPerms` instance         |
+| `createDefaultAdapter()`         | Factory | Real browser adapter (Permissions API + getUserMedia) |
+| `detectPlatform(config)`         | Helper  | Returns `MicPlatformContext`                          |
+| `detectBridge(platform, config)` | Helper  | Returns `boolean`                                     |
 
 ### MicPerms instance methods
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `subscribe(cb)` | `() => void` | Reactive subscription (fires immediately) |
-| `get()` | `MicPermsState` | Current state snapshot |
-| `check()` | `Promise<status>` | Query via Permissions API |
-| `request()` | `Promise<status>` | Request via getUserMedia (stops tracks) |
-| `recheck()` | `Promise<status>` | `check()` then fallback to `request()` if ambiguous |
-| `openSettings()` | `boolean` | Call native bridge to open app settings |
-| `destroy()` | `void` | Cleanup all listeners (idempotent) |
+| Method           | Returns           | Description                                         |
+| ---------------- | ----------------- | --------------------------------------------------- |
+| `subscribe(cb)`  | `() => void`      | Reactive subscription (fires immediately)           |
+| `get()`          | `MicPermsState`   | Current state snapshot                              |
+| `check()`        | `Promise<status>` | Query via Permissions API                           |
+| `request()`      | `Promise<status>` | Request via getUserMedia (stops tracks)             |
+| `recheck()`      | `Promise<status>` | `check()` then fallback to `request()` if ambiguous |
+| `openSettings()` | `boolean`         | Call native bridge to open app settings             |
+| `destroy()`      | `void`            | Cleanup all listeners (idempotent)                  |
 
 ## Critical Conventions
 
