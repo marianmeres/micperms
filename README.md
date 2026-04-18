@@ -33,6 +33,8 @@ const mic = createMicPerms();
 mic.subscribe((state) => {
 	console.log(state.status); // "unknown" | "prompt" | "granted" | "denied"
 	console.log(state.platform); // "browser" | "pwa" | "ios-webview" | "android-webview"
+	console.log(state.observedDenied); // true once denial has ever been observed
+	console.log(state.error?.code); // typed MicPermsErrorCode union, or undefined
 });
 
 // Check current permission (via Permissions API)
@@ -47,7 +49,10 @@ await mic.recheck();
 // Open native app settings (iOS/Android WebView only)
 mic.openSettings();
 
-// Cleanup
+// Reset internal state (clears sticky-denial, error, status -> "unknown")
+mic.reset();
+
+// Cleanup (detaches listeners; also makes check/request log a warning)
 mic.destroy();
 ```
 
@@ -71,17 +76,29 @@ const mic = createMicPerms({
   `navigator.permissions.query({ name: "microphone" })`, which is not
   authoritative in mobile WebViews (see below). `request()` wraps
   `getUserMedia()`, which always reflects reality.
-- **Sticky denial.** Once `request()` has observed `"denied"`, that state is
-  cached internally and silent `check()` calls will not downgrade it to
-  `"prompt"` / `"unknown"`. Cleared on any observed `"granted"` and by
-  `openSettings()` (user is on their way to change the OS setting).
-- **Passive triggers never prompt.** Internal listeners for `visibilitychange`
-  and `app-resumed` only call `check()` (silent). They never invoke
+- **Sticky denial.** Once `request()` (or `onPermissionChange`) has observed
+  `"denied"`, that state is cached internally — `state.observedDenied`
+  becomes `true` and silent `check()` calls will not downgrade `status` to
+  `"prompt"` / `"unknown"`. Cleared on any observed `"granted"`, by
+  `openSettings()` (user is on their way to change the OS setting), or by
+  the explicit `reset()` method.
+- **Passive triggers never prompt.** Internal listeners for `visibilitychange`,
+  `pageshow` (with `event.persisted === true` — bfcache restores), and
+  `app-resumed` only call `check()` (silent). They never invoke
   `getUserMedia()`, which would produce an unexpected OS prompt.
 - **`recheck()` is an opt-in escalation.** It calls `check()` and, if the
   result is ambiguous (`"prompt"` / `"unknown"`), escalates to `request()`.
   Only your code can trigger it — call it in response to a user gesture, not
   on resume.
+- **Concurrent `check()` / `request()` calls coalesce.** Re-entrant calls
+  while another is in flight return the same in-flight promise; the
+  underlying adapter is invoked once per concurrent batch, and all callers
+  observe an identical resolved value.
+- **Device/origin errors are typed.** When `getUserMedia` rejects with
+  `NotFoundError`, `SecurityError`, or `NotReadableError`, the rejection is
+  classified into `state.error.code` (see [`MicPermsErrorCode`](API.md#micpermserrorcode))
+  and `state.status` is preserved. UIs should check `error` before acting
+  on `status`.
 
 ## Why the Permissions API is not trusted in WebViews
 

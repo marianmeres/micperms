@@ -1,8 +1,10 @@
 import { assertEquals } from "@std/assert";
 import {
+	createDefaultAdapter,
 	createMicPerms,
 	type MicPermissionStatus,
 	type MicPermsBrowserAdapter,
+	MicPermsErrorCode,
 	type MicPermsState,
 } from "../src/micperms.ts";
 
@@ -324,9 +326,37 @@ Deno.test("re-entrancy guard: concurrent check() calls only query once", async (
 	const mic = createMicPerms({ platform: "browser", adapter });
 	const p1 = mic.check();
 	const p2 = mic.check();
-	resolveQuery("prompt");
-	await Promise.all([p1, p2]);
+	resolveQuery("granted");
+	const [r1, r2] = await Promise.all([p1, p2]);
 	assertEquals(adapter.queryCallCount, 1);
+	// Both callers must observe the same resolved value (B2 regression).
+	assertEquals(r1, "granted");
+	assertEquals(r2, "granted");
+	mic.destroy();
+});
+
+Deno.test("re-entrancy guard: concurrent request() calls only request once", async () => {
+	let resolveRequest: (v: MicPermissionStatus) => void = () => {};
+	const adapter: MicPermsBrowserAdapter & { requestCallCount: number } = {
+		queryPermission: () => Promise.resolve(null),
+		requestPermission: () => {
+			adapter.requestCallCount++;
+			return new Promise<MicPermissionStatus>((r) => {
+				resolveRequest = r;
+			});
+		},
+		supportsPermissionsApi: () => false,
+		onPermissionChange: () => null,
+		requestCallCount: 0,
+	};
+	const mic = createMicPerms({ platform: "browser", adapter });
+	const p1 = mic.request();
+	const p2 = mic.request();
+	resolveRequest("granted");
+	const [r1, r2] = await Promise.all([p1, p2]);
+	assertEquals(adapter.requestCallCount, 1);
+	assertEquals(r1, "granted");
+	assertEquals(r2, "granted");
 	mic.destroy();
 });
 
@@ -345,4 +375,377 @@ Deno.test("app-resumed does not escalate to request", async () => {
 	await new Promise((r) => setTimeout(r, 10));
 	assertEquals(adapter.requestCallCount, requestsBefore);
 	mic.destroy();
+});
+
+// ---------------------------------------------------------------------------
+// B1 — default adapter does not leak onchange after early destroy
+// ---------------------------------------------------------------------------
+
+interface FakePermissionStatus {
+	state: string;
+	onchange: (() => void) | null;
+}
+
+function installFakeNavigator() {
+	let resolveQuery: ((s: FakePermissionStatus) => void) | null = null;
+	let permStatusInstance: FakePermissionStatus | null = null;
+	const fakePermissions = {
+		query: () =>
+			new Promise<FakePermissionStatus>((r) => {
+				resolveQuery = r;
+			}),
+	};
+	// Deno's `navigator` is a real instance; add `permissions` via
+	// defineProperty so the default adapter sees it through `navigator.permissions`.
+	const hadPermissions = Object.prototype.hasOwnProperty.call(
+		_g.navigator,
+		"permissions",
+	);
+	const prev = hadPermissions ? _g.navigator.permissions : undefined;
+	Object.defineProperty(_g.navigator, "permissions", {
+		value: fakePermissions,
+		configurable: true,
+		writable: true,
+	});
+	return {
+		resolveQuery: (state: string): FakePermissionStatus => {
+			permStatusInstance = { state, onchange: null };
+			resolveQuery?.(permStatusInstance);
+			return permStatusInstance;
+		},
+		getPermStatus: () => permStatusInstance,
+		restore: () => {
+			if (hadPermissions) {
+				Object.defineProperty(_g.navigator, "permissions", {
+					value: prev,
+					configurable: true,
+					writable: true,
+				});
+			} else {
+				delete _g.navigator.permissions;
+			}
+		},
+	};
+}
+
+Deno.test("B1: default adapter onchange does not leak after early destroy", async () => {
+	const fakeNav = installFakeNavigator();
+	try {
+		const adapter = createDefaultAdapter();
+		let cbCalls = 0;
+		const cleanup = adapter.onPermissionChange(() => {
+			cbCalls++;
+		})!;
+		// Destroy BEFORE the navigator.permissions.query promise resolves.
+		cleanup();
+		// Now resolve.
+		const permStatus = fakeNav.resolveQuery("prompt");
+		await waitMicrotasks(5);
+		// Handler must not have been wired up.
+		assertEquals(permStatus.onchange, null);
+		// Even if we manually invoke whatever was set, no callback fires.
+		permStatus.onchange?.();
+		assertEquals(cbCalls, 0);
+	} finally {
+		fakeNav.restore();
+	}
+});
+
+Deno.test("B1: default adapter onchange cleanup works in the normal path too", async () => {
+	const fakeNav = installFakeNavigator();
+	try {
+		const adapter = createDefaultAdapter();
+		let cbCalls = 0;
+		const cleanup = adapter.onPermissionChange(() => {
+			cbCalls++;
+		})!;
+		const permStatus = fakeNav.resolveQuery("prompt");
+		await waitMicrotasks(5);
+		// Handler is wired.
+		if (typeof permStatus.onchange !== "function") {
+			throw new Error("expected onchange to be wired");
+		}
+		// Fire it once -> callback fires.
+		permStatus.onchange?.();
+		assertEquals(cbCalls, 1);
+		// Cleanup -> handler detached.
+		cleanup();
+		assertEquals(permStatus.onchange, null);
+	} finally {
+		fakeNav.restore();
+	}
+});
+
+// ---------------------------------------------------------------------------
+// B3 — onchange + reconcile interplay (sticky flag stays consistent)
+// ---------------------------------------------------------------------------
+
+Deno.test("B3: onchange-observed denial keeps sticky flag set across in-flight check", async () => {
+	let resolveQuery: (v: MicPermissionStatus | null) => void = () => {};
+	let onchangeCb: ((s: MicPermissionStatus) => void) | null = null;
+	const adapter: MicPermsBrowserAdapter = {
+		queryPermission: () =>
+			new Promise<MicPermissionStatus | null>((r) => {
+				resolveQuery = r;
+			}),
+		requestPermission: () => Promise.resolve("granted"),
+		supportsPermissionsApi: () => true,
+		onPermissionChange: (cb) => {
+			onchangeCb = cb;
+			return () => {};
+		},
+	};
+	const mic = createMicPerms({ platform: "browser", adapter });
+	const p = mic.check();
+	// Onchange fires "denied" mid-flight.
+	onchangeCb!("denied");
+	// Lying API resolves with "prompt".
+	resolveQuery("prompt");
+	const result = await p;
+	// Sticky flag was set by onchange — check() must coerce "prompt" to "denied".
+	assertEquals(result, "denied");
+	assertEquals(mic.get().status, "denied");
+	assertEquals(mic.get().observedDenied, true);
+	mic.destroy();
+});
+
+// ---------------------------------------------------------------------------
+// B4 — getUserMedia error classification
+// ---------------------------------------------------------------------------
+
+function adapterRejecting(name: string): MicPermsBrowserAdapter {
+	return {
+		queryPermission: () => Promise.resolve(null),
+		requestPermission: () => Promise.reject(new DOMException("err", name)),
+		supportsPermissionsApi: () => false,
+		onPermissionChange: () => null,
+	};
+}
+
+Deno.test("B4: NotFoundError surfaces NO_DEVICE error code, status preserved", async () => {
+	const mic = createMicPerms({
+		platform: "browser",
+		adapter: adapterRejecting("NotFoundError"),
+	});
+	const result = await mic.request();
+	// Status is preserved (initial "unknown") rather than smeared to "unknown" by
+	// a swallowed error.
+	assertEquals(result, "unknown");
+	assertEquals(mic.get().status, "unknown");
+	assertEquals(mic.get().error?.code, MicPermsErrorCode.NoDevice);
+	mic.destroy();
+});
+
+Deno.test("B4: SecurityError surfaces INSECURE_CONTEXT error code", async () => {
+	const mic = createMicPerms({
+		platform: "browser",
+		adapter: adapterRejecting("SecurityError"),
+	});
+	await mic.request();
+	assertEquals(mic.get().error?.code, MicPermsErrorCode.InsecureContext);
+	mic.destroy();
+});
+
+Deno.test("B4: NotReadableError surfaces DEVICE_BUSY error code", async () => {
+	const mic = createMicPerms({
+		platform: "browser",
+		adapter: adapterRejecting("NotReadableError"),
+	});
+	await mic.request();
+	assertEquals(mic.get().error?.code, MicPermsErrorCode.DeviceBusy);
+	mic.destroy();
+});
+
+Deno.test("B4: unknown DOMException falls back to REQUEST_FAILED", async () => {
+	const mic = createMicPerms({
+		platform: "browser",
+		adapter: adapterRejecting("AbortError"),
+	});
+	await mic.request();
+	assertEquals(mic.get().error?.code, MicPermsErrorCode.RequestFailed);
+	mic.destroy();
+});
+
+// ---------------------------------------------------------------------------
+// B5 — lastCheckedAt only advances when the API returned a value
+// ---------------------------------------------------------------------------
+
+Deno.test("B5: check() with unsupported Permissions API does not advance lastCheckedAt", async () => {
+	const mic = createMicPerms({
+		platform: "browser",
+		adapter: createMockAdapter({ supportsPermissions: false }),
+	});
+	assertEquals(mic.get().lastCheckedAt, null);
+	await mic.check();
+	assertEquals(mic.get().lastCheckedAt, null);
+	mic.destroy();
+});
+
+// ---------------------------------------------------------------------------
+// D3 — reset() clears sticky denial, error, and lastCheckedAt
+// ---------------------------------------------------------------------------
+
+Deno.test("D3: reset() clears observedDenied, error, status, and lastCheckedAt", async () => {
+	const adapter = createMockAdapter({
+		initialState: "prompt",
+		requestResult: "denied",
+	});
+	const mic = createMicPerms({ platform: "browser", adapter });
+	await mic.request();
+	assertEquals(mic.get().status, "denied");
+	assertEquals(mic.get().observedDenied, true);
+	assertEquals(typeof mic.get().lastCheckedAt, "number");
+	mic.reset();
+	assertEquals(mic.get().status, "unknown");
+	assertEquals(mic.get().observedDenied, false);
+	assertEquals(mic.get().error, null);
+	assertEquals(mic.get().lastCheckedAt, null);
+	// After reset, lying "prompt" is no longer coerced to denied.
+	adapter.setQueryResult("prompt");
+	const checked = await mic.check();
+	assertEquals(checked, "prompt");
+	mic.destroy();
+});
+
+Deno.test("D3: reset() is a no-op after destroy", () => {
+	const mic = createMicPerms({ adapter: createMockAdapter() });
+	mic.destroy();
+	mic.reset();
+	mic.reset();
+	// no throw — passes
+});
+
+// ---------------------------------------------------------------------------
+// D4 — post-destroy check()/request() warn instead of silently no-op'ing
+// ---------------------------------------------------------------------------
+
+Deno.test("D4: post-destroy check()/request() log warnings", async () => {
+	const warnCalls: unknown[][] = [];
+	const mic = createMicPerms({
+		adapter: createMockAdapter(),
+		logger: {
+			debug: () => {},
+			warn: (...args) => warnCalls.push(args),
+			error: () => {},
+		},
+	});
+	mic.destroy();
+	await mic.check();
+	await mic.request();
+	assertEquals(warnCalls.length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// I1 — pageshow with persisted=true triggers check
+// ---------------------------------------------------------------------------
+
+Deno.test("I1: pageshow with persisted=true triggers passive check", async () => {
+	const fake = installFakeDocument("visible");
+	try {
+		const adapter = createMockAdapter({ initialState: "granted" });
+		const mic = createMicPerms({ platform: "browser", adapter });
+		const queriesBefore = adapter.queryCallCount;
+		await new Promise((r) => setTimeout(r, 600));
+		const event = new Event("pageshow");
+		Object.defineProperty(event, "persisted", { value: true });
+		_g.dispatchEvent(event);
+		await waitMicrotasks();
+		await new Promise((r) => setTimeout(r, 10));
+		if (adapter.queryCallCount <= queriesBefore) {
+			throw new Error("expected pageshow to trigger check()");
+		}
+		mic.destroy();
+	} finally {
+		fake.restore();
+	}
+});
+
+Deno.test("I1: pageshow without persisted does NOT trigger passive check", async () => {
+	const fake = installFakeDocument("visible");
+	try {
+		const adapter = createMockAdapter({ initialState: "granted" });
+		const mic = createMicPerms({ platform: "browser", adapter });
+		const queriesBefore = adapter.queryCallCount;
+		await new Promise((r) => setTimeout(r, 600));
+		_g.dispatchEvent(new Event("pageshow"));
+		await waitMicrotasks();
+		await new Promise((r) => setTimeout(r, 10));
+		assertEquals(adapter.queryCallCount, queriesBefore);
+		mic.destroy();
+	} finally {
+		fake.restore();
+	}
+});
+
+// ---------------------------------------------------------------------------
+// I3 — observedDenied is exposed in state
+// ---------------------------------------------------------------------------
+
+Deno.test("I3: observedDenied reflects denial observations", async () => {
+	const adapter = createMockAdapter({
+		initialState: "prompt",
+		requestResult: "denied",
+	});
+	const mic = createMicPerms({ platform: "browser", adapter });
+	assertEquals(mic.get().observedDenied, false);
+	await mic.request();
+	assertEquals(mic.get().observedDenied, true);
+	adapter.setQueryResult("granted");
+	await mic.check();
+	assertEquals(mic.get().observedDenied, false);
+	mic.destroy();
+});
+
+// ---------------------------------------------------------------------------
+// openSettings() bridge call clears sticky denial (iOS path)
+// ---------------------------------------------------------------------------
+
+Deno.test("openSettings() (iOS bridge) clears sticky denial and posts message", async () => {
+	const calls: unknown[] = [];
+	const prevWebkit = _g.webkit;
+	_g.webkit = {
+		messageHandlers: {
+			openAppSettings: {
+				postMessage: (msg: unknown) => calls.push(msg),
+			},
+		},
+	};
+	try {
+		const adapter = createMockAdapter({
+			initialState: "prompt",
+			requestResult: "denied",
+		});
+		const mic = createMicPerms({ platform: "ios-webview", adapter });
+		await mic.request();
+		assertEquals(mic.get().observedDenied, true);
+		assertEquals(mic.get().canOpenSettings, true);
+		const opened = mic.openSettings();
+		assertEquals(opened, true);
+		assertEquals(calls.length, 1);
+		assertEquals(mic.get().observedDenied, false);
+		mic.destroy();
+	} finally {
+		_g.webkit = prevWebkit;
+	}
+});
+
+Deno.test("openSettings() (Android bridge) clears sticky denial and calls method", async () => {
+	let called = 0;
+	const prevAndroid = _g.Android;
+	_g.Android = { openAppSettings: () => called++ };
+	try {
+		const adapter = createMockAdapter({
+			initialState: "prompt",
+			requestResult: "denied",
+		});
+		const mic = createMicPerms({ platform: "android-webview", adapter });
+		await mic.request();
+		assertEquals(mic.get().observedDenied, true);
+		assertEquals(mic.openSettings(), true);
+		assertEquals(called, 1);
+		assertEquals(mic.get().observedDenied, false);
+		mic.destroy();
+	} finally {
+		_g.Android = prevAndroid;
+	}
 });

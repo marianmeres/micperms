@@ -59,6 +59,9 @@ Detection order (first match wins):
 4. Standalone display mode → `"pwa"`
 5. Default → `"browser"`
 
+iOS WKWebView is checked before PWA standalone mode because a hosted WKWebView
+with native bridges is more specific than display-mode standalone.
+
 ---
 
 ### `detectBridge(platform, config)`
@@ -76,7 +79,8 @@ Detect whether a native bridge is available for opening app settings.
 
 ## MicPerms Instance
 
-Returned by `createMicPerms()`. All methods are safe to call after `destroy()`.
+Returned by `createMicPerms()`. After `destroy()`, `check()` and `request()` log a
+warning and resolve to the current `status` without performing any work.
 
 ### `subscribe(cb)`
 
@@ -104,8 +108,11 @@ Get the current state snapshot.
 Query the current permission status via the Permissions API. Does not trigger a
 browser prompt.
 
-**Returns:** `Promise<MicPermissionStatus>` — The resolved status. If the
-Permissions API is unsupported (e.g. iOS WKWebView), status remains unchanged.
+Concurrent calls coalesce: re-entrant `check()` while another check is in flight
+returns the same in-flight promise. Both callers observe an identical resolved value.
+
+**Returns:** `Promise<MicPermissionStatus>` — The resolved status. If the Permissions
+API is unsupported (e.g. iOS WKWebView), `status` and `lastCheckedAt` are unchanged.
 
 ---
 
@@ -114,7 +121,15 @@ Permissions API is unsupported (e.g. iOS WKWebView), status remains unchanged.
 Request microphone permission via `getUserMedia({ audio: true })`. May trigger a
 browser prompt. All tracks are stopped immediately — no stream is held.
 
-**Returns:** `Promise<MicPermissionStatus>` — `"granted"` or `"denied"`
+Concurrent calls coalesce the same way as `check()`.
+
+If `getUserMedia` rejects with a non-permission error (`NotFoundError`,
+`SecurityError`, `NotReadableError`, …), the rejection is classified into a typed
+{@link MicPermsErrorCode} on `state.error` and `state.status` is preserved
+(rather than smeared to `"unknown"`).
+
+**Returns:** `Promise<MicPermissionStatus>` — `"granted"`, `"denied"`, or the prior
+`status` when the request errored without producing a permission decision.
 
 ---
 
@@ -136,7 +151,29 @@ Attempt to open native app settings via the platform bridge.
 - Android: `window[bridgeObject][bridgeMethod]()`
 - Browser/PWA: returns `false` (no bridge available)
 
+On success, also clears the sticky `observedDenied` flag (the user is on their way
+to change the OS setting).
+
 **Returns:** `boolean` — `true` if the bridge call was made, `false` otherwise
+
+---
+
+### `reset()`
+
+Reset internal state to initial values:
+
+- `status` → `"unknown"`
+- `error` → `null`
+- `lastCheckedAt` → `null`
+- `observedDenied` → `false`
+
+Does **not** detach event listeners (use `destroy()` for that). Safe to call
+multiple times. No-op after `destroy()`.
+
+Use this when an app-level signal (e.g., a "try again" button after a context
+change) should clear the sticky-denial coercion without recreating the instance.
+
+**Returns:** `void`
 
 ---
 
@@ -168,19 +205,30 @@ interface MicPermsState {
 	platform: MicPlatformContext;
 	canOpenSettings: boolean;
 	busy: boolean;
-	error: { code: string; message: string } | null;
+	observedDenied: boolean;
+	error: MicPermsError | null;
 	lastCheckedAt: number | null;
 }
 ```
 
-| Field             | Description                                                          |
-| ----------------- | -------------------------------------------------------------------- |
-| `status`          | Current permission status                                            |
-| `platform`        | Detected platform context                                            |
-| `canOpenSettings` | Whether a native bridge was detected                                 |
-| `busy`            | `true` while an async operation is in progress                       |
-| `error`           | Last error (code: `"CHECK_FAILED"` or `"REQUEST_FAILED"`), or `null` |
-| `lastCheckedAt`   | Timestamp (`Date.now()`) of last successful check/request, or `null` |
+| Field             | Description                                                                                                                                                                 |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`          | Current permission status                                                                                                                                                   |
+| `platform`        | Detected platform context                                                                                                                                                   |
+| `canOpenSettings` | Whether a native bridge was detected                                                                                                                                        |
+| `busy`            | `true` while an async operation is in progress                                                                                                                              |
+| `observedDenied`  | `true` once `"denied"` has been observed; coerces ambiguous Permissions-API readings back to `"denied"`. Cleared by an observed `"granted"`, `openSettings()`, or `reset()` |
+| `error`           | Last error, or `null`. See [`MicPermsErrorCode`](#micpermserrorcode)                                                                                                        |
+| `lastCheckedAt`   | Timestamp (`Date.now()`) of last successful check/request, or `null`. A check that found the Permissions API unsupported does **not** advance this.                         |
+
+### `MicPermsError`
+
+```typescript
+interface MicPermsError {
+	code: MicPermsErrorCode;
+	message: string;
+}
+```
 
 ### `MicPermsConfig`
 
@@ -215,12 +263,12 @@ interface MicPermsBrowserAdapter {
 }
 ```
 
-| Method                     | Description                                                 |
-| -------------------------- | ----------------------------------------------------------- |
-| `queryPermission()`        | Query via Permissions API. Return `null` if unsupported.    |
-| `requestPermission()`      | Request via getUserMedia, stop tracks, return result.       |
-| `supportsPermissionsApi()` | Whether Permissions API is available.                       |
-| `onPermissionChange(cb)`   | Listen for permission changes. Return cleanup fn or `null`. |
+| Method                     | Description                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `queryPermission()`        | Query via Permissions API. Return `null` if unsupported.                                                                        |
+| `requestPermission()`      | Request via getUserMedia, stop tracks, return result. Throw for device-/origin-level failures so the factory can classify them. |
+| `supportsPermissionsApi()` | Whether Permissions API is available.                                                                                           |
+| `onPermissionChange(cb)`   | Listen for permission changes. Return cleanup fn or `null`.                                                                     |
 
 ### `MicPerms`
 
@@ -232,6 +280,39 @@ interface MicPerms {
 	request(): Promise<MicPermissionStatus>;
 	openSettings(): boolean;
 	recheck(): Promise<MicPermissionStatus>;
+	reset(): void;
 	destroy(): void;
 }
 ```
+
+---
+
+## Constants
+
+### `MicPermsErrorCode`
+
+Machine-readable error codes attached to `MicPermsState.error.code`.
+
+```typescript
+const MicPermsErrorCode = {
+	CheckFailed: "CHECK_FAILED",
+	RequestFailed: "REQUEST_FAILED",
+	NoDevice: "NO_DEVICE",
+	InsecureContext: "INSECURE_CONTEXT",
+	DeviceBusy: "DEVICE_BUSY",
+} as const;
+
+type MicPermsErrorCode = typeof MicPermsErrorCode[keyof typeof MicPermsErrorCode];
+```
+
+| Code               | Cause                                                            |
+| ------------------ | ---------------------------------------------------------------- |
+| `CHECK_FAILED`     | `adapter.queryPermission()` threw                                |
+| `REQUEST_FAILED`   | `adapter.requestPermission()` threw a non-classified error       |
+| `NO_DEVICE`        | `getUserMedia` threw `NotFoundError` / `DevicesNotFoundError`    |
+| `INSECURE_CONTEXT` | `getUserMedia` threw `SecurityError` (insecure origin or policy) |
+| `DEVICE_BUSY`      | `getUserMedia` threw `NotReadableError` / `TrackStartError`      |
+
+When a `NO_DEVICE` / `INSECURE_CONTEXT` / `DEVICE_BUSY` error fires, `state.status`
+is **preserved** (not flipped to `"unknown"`). UIs should consult `state.error`
+before acting on `state.status`.
