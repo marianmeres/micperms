@@ -8,6 +8,6 @@ await npmBuild({
 	repository: denoJson.name.replace(/^@/, ""),
 	dependencies: versionizeDeps(
 		["@marianmeres/clog", "@marianmeres/store"],
-		"../deno.json",
+		denoJson,
 	),
 });
