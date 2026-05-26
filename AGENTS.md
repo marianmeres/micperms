@@ -10,14 +10,16 @@
 
 ```
 /src
-  mod.ts          — Public exports (re-exports micperms.ts)
-  micperms.ts     — Entire implementation (~630 lines, mostly JSDoc)
+  mod.ts                  — Public exports (re-exports micperms.ts)
+  micperms.ts             — Core implementation (~630 lines, mostly JSDoc)
+  mic-reenable-guide.ts   — Extras: pure-DOM tutorial, subpath export
 /tests
-  micperms.test.ts — Unit tests with mock adapter
+  micperms.test.ts        — Unit tests with mock adapter
 /example
-  index.html      — Vanilla JS demo page
+  index.html              — Vanilla JS demo page (core)
+  mic-reenable-guide.html — Playground for the tutorial extras
 /scripts
-  build-npm.ts    — NPM package build script
+  build-npm.ts            — NPM package build script
 ```
 
 ## What This Library Does
@@ -46,6 +48,13 @@ tracks are stopped immediately.
 | `detectPlatform(config)`         | Helper  | Returns `MicPlatformContext`                          |
 | `detectBridge(platform, config)` | Helper  | Returns `boolean`                                     |
 | `MicPermsErrorCode`              | Const   | Frozen object of typed `state.error.code` values      |
+
+### Extras subpath (`@marianmeres/micperms/mic-reenable-guide`)
+
+| Export                         | Type    | Purpose                                                                          |
+| ------------------------------ | ------- | -------------------------------------------------------------------------------- |
+| `createMicReenableGuide(opts)` | Factory | Mounts a pure-DOM multi-step tutorial into a host container; flavor/theme aware. |
+| `detectFlavor(opts?)`          | Helper  | Returns `MicReenableGuideFlavor` (iOS/Android/desktop × browser/PWA/WebView).    |
 
 ### MicPerms instance methods
 

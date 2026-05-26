@@ -129,6 +129,37 @@ subsequent `"prompt"` from the Permissions API. Before this was enforced
 auto-`recheck()` on `visibilitychange` caused an infinite
 `denied → prompt → denied → prompt → …` loop in Android WebView.
 
+## Extras: mic re-enable guide
+
+A framework-agnostic, pure-DOM multi-step tutorial that explains how to re-enable
+microphone access after denial. Lives at a subpath so the main entry stays DOM-free.
+
+```typescript
+import { createMicPerms } from "@marianmeres/micperms";
+import { createMicReenableGuide } from "@marianmeres/micperms/mic-reenable-guide";
+
+const mic = createMicPerms();
+
+// when state.observedDenied is true and you want to help the user recover:
+const guide = createMicReenableGuide({
+	container: document.getElementById("mic-help"),
+	onOpenSettings: () => mic.openSettings(), // shown on webview/pwa flavors
+	onDone: () => mic.recheck(),
+});
+
+// optional: programmatic control
+guide.next();
+guide.back();
+guide.destroy();
+```
+
+Auto-detects platform / browser flavor (override via `flavor`), tailors the step
+copy to current OS conventions (~2–3 steps), ships built-in English and Slovak
+translations (override via `lang`; default `"auto"` reads `navigator.language`),
+and follows `html.classList.contains("dark")` for light/dark theme by default. See [API.md](API.md#extras) for the full surface
+and [example/mic-reenable-guide.html](example/mic-reenable-guide.html) for a live
+playground (run `deno task build:example` first).
+
 ## API
 
 See [API.md](API.md) for complete API documentation.

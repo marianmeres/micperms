@@ -6,6 +6,7 @@ await npmBuild({
 	name: denoJson.name,
 	version: denoJson.version,
 	repository: denoJson.name.replace(/^@/, ""),
+	entryPoints: ["mod", "mic-reenable-guide"],
 	dependencies: versionizeDeps(
 		["@marianmeres/clog", "@marianmeres/store"],
 		denoJson,

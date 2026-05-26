@@ -316,3 +316,113 @@ type MicPermsErrorCode = typeof MicPermsErrorCode[keyof typeof MicPermsErrorCode
 When a `NO_DEVICE` / `INSECURE_CONTEXT` / `DEVICE_BUSY` error fires, `state.status`
 is **preserved** (not flipped to `"unknown"`). UIs should consult `state.error`
 before acting on `state.status`.
+
+---
+
+## Extras
+
+### `createMicReenableGuide(opts)`
+
+Mount a self-contained, framework-agnostic multi-step tutorial that explains how
+the user can re-enable the microphone after denial. Lives at the subpath
+`@marianmeres/micperms/mic-reenable-guide` so the main entry stays DOM-free.
+
+**Import:**
+
+```typescript
+import {
+	createMicReenableGuide,
+	detectFlavor,
+	type MicReenableGuideFlavor,
+	type MicReenableGuideOptions,
+} from "@marianmeres/micperms/mic-reenable-guide";
+```
+
+**Parameters:** `opts: MicReenableGuideOptions`
+
+| Field            | Type                                                | Description                                                                                           |
+| ---------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `container`      | `HTMLElement` — **required**                        | Parent node. The guide is appended (not replaced).                                                    |
+| `platform`       | `MicPlatformContext` — optional                     | Forwarded to `detectPlatform` to seed flavor detection.                                               |
+| `flavor`         | `MicReenableGuideFlavor` — optional                 | Override flavor directly. Wins over `platform`.                                                       |
+| `lang`           | `MicReenableGuideLang \| "auto"` — default `"auto"` | Built-in translation. `"auto"` reads `navigator.language`. Falls back to `"en"` if no built-in match. |
+| `steps`          | `MicReenableGuideStep[]` — optional                 | Replace the auto-generated step list (wins over the `lang` translation).                              |
+| `title`          | `string` — optional                                 | Header title override (wins over the `lang` translation).                                             |
+| `subtitle`       | `string` — optional                                 | Header subtitle override (wins over the `lang` translation).                                          |
+| `theme`          | `"auto" \| "light" \| "dark"` — default `"auto"`    | `"auto"` mirrors `html.classList.contains("dark")` live (MutationObserver).                           |
+| `accent`         | `string` — optional                                 | Any CSS color; sets `--mpg-accent`.                                                                   |
+| `labels`         | `{ back?, next?, done?, openSettings? }`            | Per-key button label override (wins over the `lang` translation).                                     |
+| `onOpenSettings` | `() => void` — optional                             | When set on `*-webview` / `*-pwa` flavors, renders an "Open Settings" CTA.                            |
+| `onDone`         | `() => void` — optional                             | Fires when the user taps **Done** on the final step.                                                  |
+
+**Returns:** `MicReenableGuide`
+
+```typescript
+interface MicReenableGuide {
+	readonly el: HTMLElement;
+	readonly index: number;
+	next(): void;
+	back(): void;
+	goto(i: number): void;
+	setTheme(theme: "auto" | "light" | "dark"): void;
+	destroy(): void;
+}
+```
+
+**Flavors:**
+
+```typescript
+type MicReenableGuideFlavor =
+	| "ios-safari"
+	| "android-chrome"
+	| "desktop"
+	| "ios-webview"
+	| "android-webview"
+	| "ios-pwa"
+	| "android-pwa";
+```
+
+**Languages:**
+
+```typescript
+type MicReenableGuideLang = "en" | "sk";
+
+// Inspectable list of all supported codes:
+const MIC_REENABLE_GUIDE_LANGS: readonly MicReenableGuideLang[];
+```
+
+The resolved code is also written to the root element's `lang` attribute, so
+screen readers can pronounce content correctly. To add a language not in the
+built-in set, supply your own `title` / `subtitle` / `labels` / `steps`.
+
+**Example:**
+
+```typescript
+import { createMicPerms } from "@marianmeres/micperms";
+import { createMicReenableGuide } from "@marianmeres/micperms/mic-reenable-guide";
+
+const mic = createMicPerms();
+const guide = createMicReenableGuide({
+	container: document.getElementById("mic-help"),
+	onOpenSettings: () => mic.openSettings(),
+	onDone: () => mic.recheck(),
+});
+
+// later
+guide.destroy();
+```
+
+---
+
+### `detectFlavor(opts?)`
+
+Resolve a `MicReenableGuideFlavor` from platform context + user agent. Useful if
+you want to render your own UI but still benefit from the bucketing logic.
+
+**Parameters:**
+
+- `opts.platform` — optional `MicPlatformContext` override (forwarded to `detectPlatform`).
+- `opts.flavor` — optional explicit override; returned as-is.
+- `opts.userAgent` — optional UA string; defaults to `navigator.userAgent`.
+
+**Returns:** `MicReenableGuideFlavor`
