@@ -186,15 +186,56 @@ export function detectFlavor(opts: {
 // ---------------------------------------------------------------------------
 
 const ART = {
-	addressbar:
+	addressbarIOS:
 		`<svg viewBox="0 0 320 158" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
 		<rect x="40" y="58" width="240" height="42" rx="11" fill="var(--mpg-art-bg)" stroke="var(--mpg-line)"/>
-		<rect x="52" y="71" width="24" height="16" rx="5" fill="var(--mpg-accent)" class="mpg-pulse"/>
-		<text x="64" y="83" font-size="10" font-weight="700" fill="#fff" text-anchor="middle" font-family="sans-serif">aA</text>
+		<g class="mpg-pulse">
+			<rect x="51" y="65" width="28" height="28" rx="7" fill="var(--mpg-accent-soft)"/>
+			<rect x="58" y="71" width="14" height="16" rx="2.2" fill="none" stroke="var(--mpg-accent)" stroke-width="1.4"/>
+			<line x1="61" y1="76" x2="69" y2="76" stroke="var(--mpg-accent)" stroke-width="1.3" stroke-linecap="round"/>
+			<line x1="61" y1="80" x2="69" y2="80" stroke="var(--mpg-accent)" stroke-width="1.3" stroke-linecap="round"/>
+			<line x1="61" y1="84" x2="66" y2="84" stroke="var(--mpg-accent)" stroke-width="1.3" stroke-linecap="round"/>
+		</g>
 		<rect x="92" y="73" width="120" height="12" rx="6" fill="var(--mpg-art-soft)"/>
 		<circle cx="248" cy="79" r="9" fill="var(--mpg-art-soft)"/><path d="M244 79h8M248 75v8" stroke="var(--mpg-muted)" stroke-width="1.4"/>
-		<path d="M64 64 L64 50" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-dasharray="3 3"/>
-		<circle cx="64" cy="48" r="3" fill="var(--mpg-accent)"/>
+		<path d="M65 62 L65 48" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-dasharray="3 3"/>
+		<circle cx="65" cy="46" r="3" fill="var(--mpg-accent)"/>
+	</svg>`,
+	addressbarAndroid:
+		`<svg viewBox="0 0 320 158" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+		<rect x="40" y="58" width="240" height="42" rx="11" fill="var(--mpg-art-bg)" stroke="var(--mpg-line)"/>
+		<g class="mpg-pulse">
+			<rect x="51" y="65" width="28" height="28" rx="7" fill="var(--mpg-accent-soft)"/>
+			<line x1="57" y1="73" x2="73" y2="73" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-linecap="round"/>
+			<circle cx="68" cy="73" r="2.4" fill="var(--mpg-art-bg)" stroke="var(--mpg-accent)" stroke-width="1.4"/>
+			<line x1="57" y1="79" x2="73" y2="79" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-linecap="round"/>
+			<circle cx="60" cy="79" r="2.4" fill="var(--mpg-art-bg)" stroke="var(--mpg-accent)" stroke-width="1.4"/>
+			<line x1="57" y1="85" x2="73" y2="85" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-linecap="round"/>
+			<circle cx="65" cy="85" r="2.4" fill="var(--mpg-art-bg)" stroke="var(--mpg-accent)" stroke-width="1.4"/>
+		</g>
+		<rect x="92" y="73" width="120" height="12" rx="6" fill="var(--mpg-art-soft)"/>
+		<circle cx="248" cy="79" r="9" fill="var(--mpg-art-soft)"/><path d="M244 79h8M248 75v8" stroke="var(--mpg-muted)" stroke-width="1.4"/>
+		<path d="M65 62 L65 48" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-dasharray="3 3"/>
+		<circle cx="65" cy="46" r="3" fill="var(--mpg-accent)"/>
+	</svg>`,
+	addressbarDesktop:
+		`<svg viewBox="0 0 320 158" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+		<rect x="28" y="22" width="264" height="92" rx="10" fill="var(--mpg-art-bg)" stroke="var(--mpg-line)"/>
+		<line x1="28" y1="48" x2="292" y2="48" stroke="var(--mpg-line)"/>
+		<circle cx="44" cy="35" r="4" fill="var(--mpg-art-soft)"/>
+		<circle cx="58" cy="35" r="4" fill="var(--mpg-art-soft)"/>
+		<circle cx="72" cy="35" r="4" fill="var(--mpg-art-soft)"/>
+		<rect x="44" y="66" width="232" height="32" rx="8" fill="var(--mpg-bg)" stroke="var(--mpg-line)"/>
+		<g class="mpg-pulse">
+			<rect x="52" y="72" width="24" height="20" rx="5" fill="var(--mpg-accent-soft)"/>
+			<path d="M59 81 v-3 a5 5 0 0 1 10 0 v3" fill="none" stroke="var(--mpg-accent)" stroke-width="1.5"/>
+			<rect x="57" y="81" width="14" height="9" rx="1.6" fill="var(--mpg-accent)"/>
+		</g>
+		<rect x="86" y="77" width="146" height="10" rx="5" fill="var(--mpg-art-soft)"/>
+		<circle cx="260" cy="82" r="7.5" fill="var(--mpg-art-soft)"/>
+		<path d="M256 82h8M260 78v8" stroke="var(--mpg-muted)" stroke-width="1.4"/>
+		<path d="M64 100 L64 118" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-dasharray="3 3"/>
+		<circle cx="64" cy="121" r="3" fill="var(--mpg-accent)"/>
 	</svg>`,
 	menu:
 		`<svg viewBox="0 0 320 158" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -229,9 +270,9 @@ const ART = {
 // ---------------------------------------------------------------------------
 
 const FLAVOR_ART: Record<MicReenableGuideFlavor, readonly string[]> = {
-	"ios-safari": [ART.addressbar, ART.menu, ART.toggle],
-	"android-chrome": [ART.addressbar, ART.menu, ART.toggle],
-	"desktop": [ART.addressbar, ART.menu, ART.toggle],
+	"ios-safari": [ART.addressbarIOS, ART.menu, ART.toggle],
+	"android-chrome": [ART.addressbarAndroid, ART.menu, ART.toggle],
+	"desktop": [ART.addressbarDesktop, ART.menu, ART.toggle],
 	"ios-webview": [ART.gear, ART.toggle],
 	"android-webview": [ART.gear, ART.toggle],
 	"ios-pwa": [ART.gear, ART.toggle],
