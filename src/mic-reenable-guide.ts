@@ -698,7 +698,7 @@ export function createMicReenableGuide(
 		if (out == null) return false;
 		host.replaceChildren();
 		if (typeof out === "string") host.innerHTML = out;
-		else host.appendChild(out);
+		else host.appendChild(out as Node);
 		return true;
 	}
 
@@ -876,7 +876,7 @@ export function createMicReenableGuide(
 			if (slots.button) {
 				const out = slots.button(b);
 				if (out != null) {
-					appendSlotOutput(wrap, out);
+					appendSlotOutput(wrap, out as Node | string);
 					continue;
 				}
 			}
