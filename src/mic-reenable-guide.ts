@@ -38,6 +38,87 @@ export interface MicReenableGuideStep {
 	art?: string | SVGElement;
 }
 
+// ---------------------------------------------------------------------------
+// Slot types — vanilla equivalent of Svelte snippets / React render props.
+// Each slot is `(ctx) => Node | string | void`. Returning a Node mounts it
+// as-is, a string is rendered as trusted HTML (matches `step.text`'s
+// contract), and nothing (`void` / `undefined` / `null`) falls back to the
+// built-in chrome. Slots are called on every render, so they re-run on
+// step changes.
+// ---------------------------------------------------------------------------
+
+/** Context passed to all slots. */
+export interface MicReenableGuideRenderContext {
+	/** 0-based current step index. */
+	index: number;
+	/** Total number of steps. */
+	total: number;
+	isFirst: boolean;
+	isLast: boolean;
+	/** The current step (text + art). */
+	step: MicReenableGuideStep;
+	flavor: MicReenableGuideFlavor;
+	lang: MicReenableGuideLang;
+	title: string;
+	subtitle: string;
+	labels: {
+		back: string;
+		next: string;
+		done: string;
+		openSettings: string;
+	};
+	/** Whether the platform-specific "Open Settings" CTA applies on step 0. */
+	hasOpenSettingsCta: boolean;
+	/** Advance one step (clamped). */
+	next(): void;
+	/** Go back one step (clamped). */
+	back(): void;
+	/** Jump to a step (clamped). */
+	goto(i: number): void;
+	/** Fires `onDone`. */
+	done(): void;
+	/** Fires `onOpenSettings` (if provided). */
+	openSettings(): void;
+}
+
+/** Context for the per-button slot. */
+export interface MicReenableGuideButtonContext
+	extends MicReenableGuideRenderContext {
+	/** Which logical button this is. */
+	role: "back" | "next" | "done" | "open-settings";
+	/** Resolved label for this role. */
+	label: string;
+	/** Whether this button should be disabled (only `back` on step 0). */
+	disabled: boolean;
+	/** Pre-wired click handler — triggers the normal behavior for this role. */
+	onClick(): void;
+}
+
+/** A slot returns markup, a node, or nothing (= use default). */
+export type MicReenableGuideSlot<
+	C = MicReenableGuideRenderContext,
+> = (ctx: C) => Node | string | null | undefined | void;
+
+/** Optional render overrides. Each is called on every render. */
+export interface MicReenableGuideSlots {
+	/** Replace the title + subtitle block. */
+	header?: MicReenableGuideSlot;
+	/** Replace the illustration. */
+	art?: MicReenableGuideSlot;
+	/** Replace the step body (number + text). */
+	step?: MicReenableGuideSlot;
+	/**
+	 * Replace an individual button. Called once per visible button per render.
+	 * Return `void` to keep the default chrome for that button only.
+	 */
+	button?: MicReenableGuideSlot<MicReenableGuideButtonContext>;
+	/**
+	 * Replace the entire footer (the row of buttons). When set, `button` is
+	 * not consulted — you own the whole row.
+	 */
+	footer?: MicReenableGuideSlot;
+}
+
 /** Configuration for {@linkcode createMicReenableGuide}. */
 export interface MicReenableGuideOptions {
 	/** Parent element. Required — the guide is appended to this node. */
@@ -96,6 +177,13 @@ export interface MicReenableGuideOptions {
 	onOpenSettings?: () => void;
 	/** Called when the user presses **Done** on the last step. */
 	onDone?: () => void;
+
+	/**
+	 * Slot overrides — supply render functions for the regions you want to
+	 * customize. Anything not provided falls back to the built-in chrome.
+	 * See {@linkcode MicReenableGuideSlots}.
+	 */
+	slots?: MicReenableGuideSlots;
 }
 
 /** Public API returned by {@linkcode createMicReenableGuide}. */
@@ -196,8 +284,8 @@ const ART = {
 			<line x1="61" y1="80" x2="69" y2="80" stroke="var(--mpg-accent)" stroke-width="1.3" stroke-linecap="round"/>
 			<line x1="61" y1="84" x2="66" y2="84" stroke="var(--mpg-accent)" stroke-width="1.3" stroke-linecap="round"/>
 		</g>
-		<rect x="92" y="73" width="120" height="12" rx="6" fill="var(--mpg-art-soft)"/>
-		<circle cx="248" cy="79" r="9" fill="var(--mpg-art-soft)"/><path d="M244 79h8M248 75v8" stroke="var(--mpg-muted)" stroke-width="1.4"/>
+		<rect x="92" y="73" width="158" height="12" rx="6" fill="var(--mpg-art-soft)"/>
+		<g transform="translate(259 72) scale(0.875)" fill="var(--mpg-muted)"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></g>
 		<path d="M65 62 L65 48" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-dasharray="3 3"/>
 		<circle cx="65" cy="46" r="3" fill="var(--mpg-accent)"/>
 	</svg>`,
@@ -213,8 +301,8 @@ const ART = {
 			<line x1="57" y1="85" x2="73" y2="85" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-linecap="round"/>
 			<circle cx="65" cy="85" r="2.4" fill="var(--mpg-art-bg)" stroke="var(--mpg-accent)" stroke-width="1.4"/>
 		</g>
-		<rect x="92" y="73" width="120" height="12" rx="6" fill="var(--mpg-art-soft)"/>
-		<circle cx="248" cy="79" r="9" fill="var(--mpg-art-soft)"/><path d="M244 79h8M248 75v8" stroke="var(--mpg-muted)" stroke-width="1.4"/>
+		<rect x="92" y="73" width="158" height="12" rx="6" fill="var(--mpg-art-soft)"/>
+		<g transform="translate(259 72) scale(0.875)" fill="var(--mpg-muted)"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></g>
 		<path d="M65 62 L65 48" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-dasharray="3 3"/>
 		<circle cx="65" cy="46" r="3" fill="var(--mpg-accent)"/>
 	</svg>`,
@@ -231,9 +319,8 @@ const ART = {
 			<path d="M59 81 v-3 a5 5 0 0 1 10 0 v3" fill="none" stroke="var(--mpg-accent)" stroke-width="1.5"/>
 			<rect x="57" y="81" width="14" height="9" rx="1.6" fill="var(--mpg-accent)"/>
 		</g>
-		<rect x="86" y="77" width="146" height="10" rx="5" fill="var(--mpg-art-soft)"/>
-		<circle cx="260" cy="82" r="7.5" fill="var(--mpg-art-soft)"/>
-		<path d="M256 82h8M260 78v8" stroke="var(--mpg-muted)" stroke-width="1.4"/>
+		<rect x="86" y="77" width="170" height="10" rx="5" fill="var(--mpg-art-soft)"/>
+		<g transform="translate(260 76) scale(0.75)" fill="var(--mpg-muted)"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></g>
 		<path d="M64 100 L64 118" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-dasharray="3 3"/>
 		<circle cx="64" cy="121" r="3" fill="var(--mpg-accent)"/>
 	</svg>`,
@@ -466,7 +553,8 @@ const STYLE_CSS = `
 	overflow: hidden; position: relative;
 }
 .mpg__art svg { width: 100%; height: 100%; }
-.mpg__step { display: flex; gap: 10px; align-items: flex-start; padding: 14px 20px 4px; }
+.mpg__step { padding: 14px 20px 4px; }
+.mpg__step-default { display: flex; gap: 10px; align-items: flex-start; }
 .mpg__num {
 	flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
 	background: var(--mpg-accent); color: #fff; font-size: 12.5px; font-weight: 600;
@@ -480,7 +568,8 @@ const STYLE_CSS = `
 	transition: background .2s, width .2s;
 }
 .mpg__dot--on { background: var(--mpg-accent); width: 18px; border-radius: 3px; }
-.mpg__foot { display: flex; gap: 10px; padding: 12px 20px 18px; }
+.mpg__foot { padding: 12px 20px 18px; }
+.mpg__foot-default { display: flex; gap: 10px; }
 .mpg__btn {
 	flex: 1; height: 44px; border-radius: 11px; border: 0; cursor: pointer;
 	font-family: inherit; font-size: 15px; font-weight: 600;
@@ -573,110 +662,237 @@ export function createMicReenableGuide(
 	root.lang = lang;
 	if (opts.accent) root.style.setProperty("--mpg-accent", opts.accent);
 
+	// Skeleton: each slot-able region is an empty host populated by the
+	// render path (either a user slot or the built-in default).
 	root.innerHTML = `
-		<div class="mpg__head">
-			<h2 class="mpg__title"></h2>
-			<p class="mpg__sub"></p>
-		</div>
+		<div class="mpg__head" data-head></div>
 		<div class="mpg__stage"><div class="mpg__art" data-art></div></div>
-		<div class="mpg__step">
-			<div class="mpg__num" data-num>1</div>
-			<div class="mpg__text" data-text></div>
-		</div>
+		<div class="mpg__step" data-step></div>
 		<div class="mpg__dots" data-dots></div>
-		<div class="mpg__foot">
-			<button class="mpg__btn mpg__btn--ghost" data-back type="button"></button>
-			<button class="mpg__btn mpg__btn--solid" data-next type="button"></button>
-		</div>
+		<div class="mpg__foot" data-foot></div>
 	`;
 
-	(root.querySelector(".mpg__title") as HTMLElement).textContent = title;
-	(root.querySelector(".mpg__sub") as HTMLElement).textContent = subtitle;
-	(root.querySelector("[data-back]") as HTMLButtonElement).textContent = labels.back;
+	const $head = root.querySelector("[data-head]") as HTMLElement;
+	const $art = root.querySelector("[data-art]") as HTMLElement;
+	const $step = root.querySelector("[data-step]") as HTMLElement;
+	const $dotsHost = root.querySelector("[data-dots]") as HTMLElement;
+	const $foot = root.querySelector("[data-foot]") as HTMLElement;
 
-	const dotsHost = root.querySelector("[data-dots]") as HTMLElement;
 	const dots = steps.map(() => {
 		const d = document.createElement("span");
 		d.className = "mpg__dot";
-		dotsHost.appendChild(d);
+		$dotsHost.appendChild(d);
 		return d;
 	});
 
-	const $art = root.querySelector("[data-art]") as HTMLElement;
-	const $num = root.querySelector("[data-num]") as HTMLElement;
-	const $text = root.querySelector("[data-text]") as HTMLElement;
-	const $back = root.querySelector("[data-back]") as HTMLButtonElement;
-	const $next = root.querySelector("[data-next]") as HTMLButtonElement;
+	const slots = opts.slots ?? {};
 
 	let i = 0;
 	let destroyed = false;
 	let themeObserver: MutationObserver | null = null;
 
-	function setArt(art: MicReenableGuideStep["art"]): void {
-		$art.replaceChildren();
-		if (!art) return;
-		if (typeof art === "string") {
-			$art.innerHTML = art;
+	function mountInto(
+		host: HTMLElement,
+		out: Node | string | null | undefined | void,
+	): boolean {
+		if (out == null) return false;
+		host.replaceChildren();
+		if (typeof out === "string") host.innerHTML = out;
+		else host.appendChild(out);
+		return true;
+	}
+
+	function appendSlotOutput(host: HTMLElement, out: Node | string): void {
+		if (typeof out === "string") {
+			const tpl = document.createElement("template");
+			tpl.innerHTML = out;
+			host.appendChild(tpl.content);
 		} else {
-			$art.appendChild(art);
+			host.appendChild(out);
 		}
 	}
 
-	function render(): void {
-		const step = steps[i];
-		setArt(step.art);
-		$num.textContent = String(i + 1);
-		$text.innerHTML = step.text;
-		dots.forEach((d, n) => d.classList.toggle("mpg__dot--on", n === i));
-		$back.disabled = i === 0;
-
-		// On step 0, when applicable, replace the Next button with two buttons:
-		// "Open Settings" (solid) + "Next" (ghost). Otherwise normal Next/Done.
+	function buildCtx(): MicReenableGuideRenderContext {
 		const isLast = i === steps.length - 1;
-		const showCta = showSettingsCta && i === 0;
-
-		if (showCta) {
-			$next.textContent = labels.openSettings;
-			$next.classList.add("mpg__btn--solid");
-			$next.classList.remove("mpg__btn--ghost");
-			$next.dataset.role = "open-settings";
-		} else {
-			$next.textContent = isLast ? labels.done : labels.next;
-			$next.classList.add("mpg__btn--solid");
-			$next.classList.remove("mpg__btn--ghost");
-			$next.dataset.role = isLast ? "done" : "next";
-		}
+		return {
+			index: i,
+			total: steps.length,
+			isFirst: i === 0,
+			isLast,
+			step: steps[i],
+			flavor,
+			lang,
+			title,
+			subtitle,
+			labels,
+			hasOpenSettingsCta: showSettingsCta,
+			next() {
+				if (destroyed) return;
+				if (i < steps.length - 1) {
+					i++;
+					render();
+				}
+			},
+			back() {
+				if (destroyed) return;
+				if (i > 0) {
+					i--;
+					render();
+				}
+			},
+			goto(n: number) {
+				if (destroyed) return;
+				const clamped = Math.max(0, Math.min(steps.length - 1, n | 0));
+				if (clamped !== i) {
+					i = clamped;
+					render();
+				}
+			},
+			done() {
+				opts.onDone?.();
+			},
+			openSettings() {
+				opts.onOpenSettings?.();
+			},
+		};
 	}
 
-	$back.addEventListener("click", () => {
-		if (destroyed) return;
-		if (i > 0) {
-			i--;
-			render();
-		}
-	});
+	function renderHeader(ctx: MicReenableGuideRenderContext): void {
+		if (slots.header && mountInto($head, slots.header(ctx))) return;
+		$head.replaceChildren();
+		const h = document.createElement("h2");
+		h.className = "mpg__title";
+		h.textContent = ctx.title;
+		const p = document.createElement("p");
+		p.className = "mpg__sub";
+		p.textContent = ctx.subtitle;
+		$head.append(h, p);
+	}
 
-	$next.addEventListener("click", () => {
-		if (destroyed) return;
-		const role = $next.dataset.role;
-		if (role === "open-settings") {
-			opts.onOpenSettings?.();
-			// also advance so the user sees the next step
+	function renderArt(ctx: MicReenableGuideRenderContext): void {
+		if (slots.art && mountInto($art, slots.art(ctx))) return;
+		$art.replaceChildren();
+		const art = ctx.step.art;
+		if (!art) return;
+		if (typeof art === "string") $art.innerHTML = art;
+		else $art.appendChild(art);
+	}
+
+	function renderStep(ctx: MicReenableGuideRenderContext): void {
+		if (slots.step && mountInto($step, slots.step(ctx))) return;
+		$step.replaceChildren();
+		const wrap = document.createElement("div");
+		wrap.className = "mpg__step-default";
+		const num = document.createElement("div");
+		num.className = "mpg__num";
+		num.textContent = String(ctx.index + 1);
+		const text = document.createElement("div");
+		text.className = "mpg__text";
+		text.innerHTML = ctx.step.text;
+		wrap.append(num, text);
+		$step.appendChild(wrap);
+	}
+
+	function buttonContexts(
+		ctx: MicReenableGuideRenderContext,
+	): MicReenableGuideButtonContext[] {
+		const primaryRole: MicReenableGuideButtonContext["role"] =
+			showSettingsCta && ctx.isFirst
+				? "open-settings"
+				: ctx.isLast
+				? "done"
+				: "next";
+		const primaryLabel = primaryRole === "open-settings"
+			? labels.openSettings
+			: primaryRole === "done"
+			? labels.done
+			: labels.next;
+		const primaryClick = () => {
+			if (destroyed) return;
+			if (primaryRole === "open-settings") {
+				opts.onOpenSettings?.();
+				// advance so the user sees the next step
+				if (i < steps.length - 1) {
+					i++;
+					render();
+				}
+				return;
+			}
+			if (primaryRole === "done") {
+				opts.onDone?.();
+				return;
+			}
 			if (i < steps.length - 1) {
 				i++;
 				render();
 			}
-			return;
+		};
+		const backClick = () => {
+			if (destroyed) return;
+			if (i > 0) {
+				i--;
+				render();
+			}
+		};
+		return [
+			{
+				...ctx,
+				role: "back",
+				label: labels.back,
+				disabled: ctx.isFirst,
+				onClick: backClick,
+			},
+			{
+				...ctx,
+				role: primaryRole,
+				label: primaryLabel,
+				disabled: false,
+				onClick: primaryClick,
+			},
+		];
+	}
+
+	function renderDefaultButton(
+		b: MicReenableGuideButtonContext,
+	): HTMLButtonElement {
+		const el = document.createElement("button");
+		el.type = "button";
+		el.className = b.role === "back"
+			? "mpg__btn mpg__btn--ghost"
+			: "mpg__btn mpg__btn--solid";
+		el.textContent = b.label;
+		el.disabled = b.disabled;
+		el.dataset.role = b.role;
+		el.addEventListener("click", b.onClick);
+		return el;
+	}
+
+	function renderFooter(ctx: MicReenableGuideRenderContext): void {
+		if (slots.footer && mountInto($foot, slots.footer(ctx))) return;
+		$foot.replaceChildren();
+		const wrap = document.createElement("div");
+		wrap.className = "mpg__foot-default";
+		for (const b of buttonContexts(ctx)) {
+			if (slots.button) {
+				const out = slots.button(b);
+				if (out != null) {
+					appendSlotOutput(wrap, out);
+					continue;
+				}
+			}
+			wrap.appendChild(renderDefaultButton(b));
 		}
-		if (role === "done") {
-			opts.onDone?.();
-			return;
-		}
-		if (i < steps.length - 1) {
-			i++;
-			render();
-		}
-	});
+		$foot.appendChild(wrap);
+	}
+
+	function render(): void {
+		const ctx = buildCtx();
+		renderHeader(ctx);
+		renderArt(ctx);
+		renderStep(ctx);
+		dots.forEach((d, n) => d.classList.toggle("mpg__dot--on", n === i));
+		renderFooter(ctx);
+	}
 
 	// --- theme ---
 
