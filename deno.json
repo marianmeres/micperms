@@ -1,6 +1,6 @@
 {
   "name": "@marianmeres/micperms",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "exports": {
     ".": "./src/mod.ts",
     "./mic-reenable-guide": "./src/mic-reenable-guide.ts"
