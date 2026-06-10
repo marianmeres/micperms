@@ -51,10 +51,13 @@ tracks are stopped immediately.
 
 ### Extras subpath (`@marianmeres/micperms/mic-reenable-guide`)
 
-| Export                         | Type    | Purpose                                                                          |
-| ------------------------------ | ------- | -------------------------------------------------------------------------------- |
-| `createMicReenableGuide(opts)` | Factory | Mounts a pure-DOM multi-step tutorial into a host container; flavor/theme aware. |
-| `detectFlavor(opts?)`          | Helper  | Returns `MicReenableGuideFlavor` (iOS/Android/desktop × browser/PWA/WebView).    |
+| Export                                   | Type    | Purpose                                                                          |
+| ---------------------------------------- | ------- | -------------------------------------------------------------------------------- |
+| `createMicReenableGuide(opts)`           | Factory | Mounts a pure-DOM multi-step tutorial into a host container; flavor/theme aware. |
+| `createMicReenableGuideController(opts)` | Factory | **Headless** state machine (no DOM): resolved steps/i18n/flavor + `next/back/goto/done/openSettings` + Svelte-compatible `subscribe`. Render the markup yourself (Svelte/React/vanilla). The DOM factory is itself just one consumer of it. |
+| `detectFlavor(opts?)`                    | Helper  | Returns `MicReenableGuideFlavor` (iOS/Android/desktop × browser/PWA/WebView).    |
+
+> Slots vs. headless: `createMicReenableGuide` already takes `slots` (`header`/`art`/`step`/`button`/`footer`) + `accent` + CSS-var overrides for skinning the built-in chrome. Reach for `createMicReenableGuideController` only when you want to own 100% of the DOM (e.g. a native Svelte component) while keeping flavor detection, default copy and navigation.
 
 ### MicPerms instance methods
 

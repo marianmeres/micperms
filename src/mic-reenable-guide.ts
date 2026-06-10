@@ -509,6 +509,241 @@ const FLAVORS_WITH_SETTINGS_CTA: ReadonlySet<MicReenableGuideFlavor> = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// Headless controller — the guide's state machine + resolved content, with
+// NO DOM. This is the seam for fully-custom rendering: drive it from any
+// framework (Svelte/React/Vue) or vanilla and own 100% of the markup. The
+// built-in `createMicReenableGuide` chrome is itself just one consumer of it.
+// ---------------------------------------------------------------------------
+
+/** Options for {@linkcode createMicReenableGuideController}. */
+export interface MicReenableGuideControllerOptions {
+	/** Override {@linkcode MicPlatformContext} detection. */
+	platform?: MicPlatformContext;
+	/** Override flavor detection directly. Takes precedence over `platform`. */
+	flavor?: MicReenableGuideFlavor;
+	/** Built-in translation to use. Defaults to `"auto"`. */
+	lang?: MicReenableGuideLang | "auto";
+	/** Replace the auto-generated step list entirely. */
+	steps?: MicReenableGuideStep[];
+	/** Override the header title. */
+	title?: string;
+	/** Override the header subtitle. */
+	subtitle?: string;
+	/** Localized button labels. */
+	labels?: {
+		back?: string;
+		next?: string;
+		done?: string;
+		openSettings?: string;
+	};
+	/** Fired by {@linkcode MicReenableGuideController.openSettings}. */
+	onOpenSettings?: () => void;
+	/** Fired by {@linkcode MicReenableGuideController.done}. */
+	onDone?: () => void;
+}
+
+/**
+ * Immutable view-model snapshot. Carries both the reactive bits (`index`,
+ * `isFirst`, `isLast`, `step`) and the resolved static config so a renderer
+ * can read everything from one object.
+ */
+export interface MicReenableGuideControllerState {
+	/** 0-based current step index. */
+	index: number;
+	/** Total number of steps. */
+	total: number;
+	isFirst: boolean;
+	isLast: boolean;
+	/** The current step (text + art). */
+	step: MicReenableGuideStep;
+	/** All resolved steps. */
+	steps: readonly MicReenableGuideStep[];
+	flavor: MicReenableGuideFlavor;
+	lang: MicReenableGuideLang;
+	title: string;
+	subtitle: string;
+	labels: {
+		back: string;
+		next: string;
+		done: string;
+		openSettings: string;
+	};
+	/** Whether the platform-specific "Open Settings" CTA applies on step 0. */
+	hasOpenSettingsCta: boolean;
+}
+
+/** Headless controller returned by {@linkcode createMicReenableGuideController}. */
+export interface MicReenableGuideController {
+	/** Current step index (0-based). */
+	readonly index: number;
+	readonly flavor: MicReenableGuideFlavor;
+	readonly lang: MicReenableGuideLang;
+	readonly steps: readonly MicReenableGuideStep[];
+	/** Current view-model snapshot. */
+	get(): MicReenableGuideControllerState;
+	/** Advance one step (clamped). */
+	next(): void;
+	/** Go back one step (clamped). */
+	back(): void;
+	/** Jump to a step (clamped). */
+	goto(i: number): void;
+	/** Fire `onDone`. */
+	done(): void;
+	/** Fire `onOpenSettings` (if provided). */
+	openSettings(): void;
+	/**
+	 * Svelte-compatible store contract: `run` is called immediately with the
+	 * current snapshot and again after every step change. Returns an
+	 * unsubscribe function.
+	 */
+	subscribe(
+		run: (state: MicReenableGuideControllerState) => void,
+	): () => void;
+	/** Drop all subscribers. Idempotent. */
+	destroy(): void;
+}
+
+interface ResolvedGuideConfig {
+	flavor: MicReenableGuideFlavor;
+	lang: MicReenableGuideLang;
+	steps: MicReenableGuideStep[];
+	title: string;
+	subtitle: string;
+	labels: { back: string; next: string; done: string; openSettings: string };
+	showSettingsCta: boolean;
+}
+
+/**
+ * Resolve flavor, language, step list, header copy, labels and the
+ * settings-CTA flag from raw options. Shared by the controller and the
+ * built-in DOM factory so resolution lives in exactly one place.
+ */
+function resolveGuideConfig(
+	opts: MicReenableGuideControllerOptions,
+): ResolvedGuideConfig {
+	const flavor = detectFlavor({
+		platform: opts.platform,
+		flavor: opts.flavor,
+	});
+	const lang = resolveLang(opts.lang);
+	const chrome = CHROME_TEXTS[lang];
+
+	const steps = opts.steps ?? defaultStepsFor(flavor, lang);
+	if (steps.length === 0) {
+		throw new Error("createMicReenableGuide: `steps` must not be empty");
+	}
+
+	return {
+		flavor,
+		lang,
+		steps,
+		title: opts.title ?? chrome.title,
+		subtitle: opts.subtitle ?? chrome.subtitle,
+		labels: {
+			back: opts.labels?.back ?? chrome.back,
+			next: opts.labels?.next ?? chrome.next,
+			done: opts.labels?.done ?? chrome.done,
+			openSettings: opts.labels?.openSettings ?? chrome.openSettings,
+		},
+		showSettingsCta: !!opts.onOpenSettings &&
+			FLAVORS_WITH_SETTINGS_CTA.has(flavor),
+	};
+}
+
+/**
+ * Create the guide's headless state machine: same flavor detection, default
+ * step content, i18n and step navigation as {@linkcode createMicReenableGuide}
+ * — but with no DOM. Subscribe for a Svelte-compatible snapshot stream and
+ * render the markup yourself.
+ *
+ * ```ts
+ * const ctrl = createMicReenableGuideController({ lang: "sk", onDone });
+ * const unsub = ctrl.subscribe((s) => paint(s));
+ * ctrl.next();
+ * // ...later
+ * unsub();
+ * ```
+ */
+export function createMicReenableGuideController(
+	opts: MicReenableGuideControllerOptions = {},
+): MicReenableGuideController {
+	const cfg = resolveGuideConfig(opts);
+	const last = cfg.steps.length - 1;
+	let i = 0;
+	let destroyed = false;
+	const subs = new Set<(s: MicReenableGuideControllerState) => void>();
+
+	function snapshot(): MicReenableGuideControllerState {
+		return {
+			index: i,
+			total: cfg.steps.length,
+			isFirst: i === 0,
+			isLast: i === last,
+			step: cfg.steps[i],
+			steps: cfg.steps,
+			flavor: cfg.flavor,
+			lang: cfg.lang,
+			title: cfg.title,
+			subtitle: cfg.subtitle,
+			labels: cfg.labels,
+			hasOpenSettingsCta: cfg.showSettingsCta,
+		};
+	}
+
+	function setIndex(n: number): void {
+		if (destroyed) return;
+		const clamped = Math.max(0, Math.min(last, n | 0));
+		if (clamped !== i) {
+			i = clamped;
+			const s = snapshot();
+			for (const run of subs) run(s);
+		}
+	}
+
+	return {
+		get index() {
+			return i;
+		},
+		get flavor() {
+			return cfg.flavor;
+		},
+		get lang() {
+			return cfg.lang;
+		},
+		get steps() {
+			return cfg.steps;
+		},
+		get: snapshot,
+		next() {
+			setIndex(i + 1);
+		},
+		back() {
+			setIndex(i - 1);
+		},
+		goto(n: number) {
+			setIndex(n);
+		},
+		done() {
+			opts.onDone?.();
+		},
+		openSettings() {
+			opts.onOpenSettings?.();
+		},
+		subscribe(run) {
+			run(snapshot());
+			subs.add(run);
+			return () => {
+				subs.delete(run);
+			};
+		},
+		destroy() {
+			destroyed = true;
+			subs.clear();
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Styles (injected once into document head)
 // ---------------------------------------------------------------------------
 
@@ -630,30 +865,21 @@ export function createMicReenableGuide(
 
 	ensureStyles();
 
-	const flavor = detectFlavor({
+	// All resolution + navigation lives in the headless controller; this
+	// factory is "just" its DOM renderer.
+	const ctrl = createMicReenableGuideController({
 		platform: opts.platform,
 		flavor: opts.flavor,
+		lang: opts.lang,
+		steps: opts.steps,
+		title: opts.title,
+		subtitle: opts.subtitle,
+		labels: opts.labels,
+		onOpenSettings: opts.onOpenSettings,
+		onDone: opts.onDone,
 	});
 
-	const lang = resolveLang(opts.lang);
-	const chrome = CHROME_TEXTS[lang];
-
-	const steps = opts.steps ?? defaultStepsFor(flavor, lang);
-	if (steps.length === 0) {
-		throw new Error("createMicReenableGuide: `steps` must not be empty");
-	}
-
-	const title = opts.title ?? chrome.title;
-	const subtitle = opts.subtitle ?? chrome.subtitle;
-	const labels = {
-		back: opts.labels?.back ?? chrome.back,
-		next: opts.labels?.next ?? chrome.next,
-		done: opts.labels?.done ?? chrome.done,
-		openSettings: opts.labels?.openSettings ?? chrome.openSettings,
-	};
-
-	const showSettingsCta = !!opts.onOpenSettings &&
-		FLAVORS_WITH_SETTINGS_CTA.has(flavor);
+	const { lang, steps } = ctrl;
 
 	// --- build DOM ---
 
@@ -687,7 +913,6 @@ export function createMicReenableGuide(
 
 	const slots = opts.slots ?? {};
 
-	let i = 0;
 	let destroyed = false;
 	let themeObserver: MutationObserver | null = null;
 
@@ -713,46 +938,29 @@ export function createMicReenableGuide(
 	}
 
 	function buildCtx(): MicReenableGuideRenderContext {
-		const isLast = i === steps.length - 1;
+		// `...snap` carries index/total/isFirst/isLast/step/flavor/lang/
+		// title/subtitle/labels/hasOpenSettingsCta; navigation delegates to
+		// the controller (which re-renders us via the subscription).
+		const snap = ctrl.get();
 		return {
-			index: i,
-			total: steps.length,
-			isFirst: i === 0,
-			isLast,
-			step: steps[i],
-			flavor,
-			lang,
-			title,
-			subtitle,
-			labels,
-			hasOpenSettingsCta: showSettingsCta,
+			...snap,
 			next() {
 				if (destroyed) return;
-				if (i < steps.length - 1) {
-					i++;
-					render();
-				}
+				ctrl.next();
 			},
 			back() {
 				if (destroyed) return;
-				if (i > 0) {
-					i--;
-					render();
-				}
+				ctrl.back();
 			},
 			goto(n: number) {
 				if (destroyed) return;
-				const clamped = Math.max(0, Math.min(steps.length - 1, n | 0));
-				if (clamped !== i) {
-					i = clamped;
-					render();
-				}
+				ctrl.goto(n);
 			},
 			done() {
-				opts.onDone?.();
+				ctrl.done();
 			},
 			openSettings() {
-				opts.onOpenSettings?.();
+				ctrl.openSettings();
 			},
 		};
 	}
@@ -797,48 +1005,39 @@ export function createMicReenableGuide(
 		ctx: MicReenableGuideRenderContext,
 	): MicReenableGuideButtonContext[] {
 		const primaryRole: MicReenableGuideButtonContext["role"] =
-			showSettingsCta && ctx.isFirst
+			ctx.hasOpenSettingsCta && ctx.isFirst
 				? "open-settings"
 				: ctx.isLast
 				? "done"
 				: "next";
 		const primaryLabel = primaryRole === "open-settings"
-			? labels.openSettings
+			? ctx.labels.openSettings
 			: primaryRole === "done"
-			? labels.done
-			: labels.next;
+			? ctx.labels.done
+			: ctx.labels.next;
 		const primaryClick = () => {
 			if (destroyed) return;
 			if (primaryRole === "open-settings") {
-				opts.onOpenSettings?.();
+				ctx.openSettings();
 				// advance so the user sees the next step
-				if (i < steps.length - 1) {
-					i++;
-					render();
-				}
+				ctx.next();
 				return;
 			}
 			if (primaryRole === "done") {
-				opts.onDone?.();
+				ctx.done();
 				return;
 			}
-			if (i < steps.length - 1) {
-				i++;
-				render();
-			}
+			ctx.next();
 		};
 		const backClick = () => {
 			if (destroyed) return;
-			if (i > 0) {
-				i--;
-				render();
-			}
+			ctx.back();
 		};
 		return [
 			{
 				...ctx,
 				role: "back",
-				label: labels.back,
+				label: ctx.labels.back,
 				disabled: ctx.isFirst,
 				onClick: backClick,
 			},
@@ -890,7 +1089,7 @@ export function createMicReenableGuide(
 		renderHeader(ctx);
 		renderArt(ctx);
 		renderStep(ctx);
-		dots.forEach((d, n) => d.classList.toggle("mpg__dot--on", n === i));
+		dots.forEach((d, n) => d.classList.toggle("mpg__dot--on", n === ctx.index));
 		renderFooter(ctx);
 	}
 
@@ -930,40 +1129,36 @@ export function createMicReenableGuide(
 	}
 
 	setTheme(opts.theme ?? "auto");
-	render();
+	// Subscribe fires immediately → initial render; later step changes
+	// (via the API or button clicks) re-render through the same path.
+	const unsubscribeCtrl = ctrl.subscribe(() => {
+		if (!destroyed) render();
+	});
 	opts.container.appendChild(root);
 
 	const api: MicReenableGuide = {
 		el: root,
 		get index() {
-			return i;
+			return ctrl.index;
 		},
 		next() {
 			if (destroyed) return;
-			if (i < steps.length - 1) {
-				i++;
-				render();
-			}
+			ctrl.next();
 		},
 		back() {
 			if (destroyed) return;
-			if (i > 0) {
-				i--;
-				render();
-			}
+			ctrl.back();
 		},
 		goto(n: number) {
 			if (destroyed) return;
-			const clamped = Math.max(0, Math.min(steps.length - 1, n | 0));
-			if (clamped !== i) {
-				i = clamped;
-				render();
-			}
+			ctrl.goto(n);
 		},
 		setTheme,
 		destroy() {
 			if (destroyed) return;
 			destroyed = true;
+			unsubscribeCtrl();
+			ctrl.destroy();
 			if (themeObserver) {
 				themeObserver.disconnect();
 				themeObserver = null;
