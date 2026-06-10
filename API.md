@@ -332,28 +332,31 @@ the user can re-enable the microphone after denial. Lives at the subpath
 ```typescript
 import {
 	createMicReenableGuide,
+	defaultStepsFor,
 	detectFlavor,
 	type MicReenableGuideFlavor,
 	type MicReenableGuideOptions,
+	type MicReenableGuideStepsBuilderContext,
 } from "@marianmeres/micperms/mic-reenable-guide";
 ```
 
 **Parameters:** `opts: MicReenableGuideOptions`
 
-| Field            | Type                                                | Description                                                                                           |
-| ---------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `container`      | `HTMLElement` — **required**                        | Parent node. The guide is appended (not replaced).                                                    |
-| `platform`       | `MicPlatformContext` — optional                     | Forwarded to `detectPlatform` to seed flavor detection.                                               |
-| `flavor`         | `MicReenableGuideFlavor` — optional                 | Override flavor directly. Wins over `platform`.                                                       |
-| `lang`           | `MicReenableGuideLang \| "auto"` — default `"auto"` | Built-in translation. `"auto"` reads `navigator.language`. Falls back to `"en"` if no built-in match. |
-| `steps`          | `MicReenableGuideStep[]` — optional                 | Replace the auto-generated step list (wins over the `lang` translation).                              |
-| `title`          | `string` — optional                                 | Header title override (wins over the `lang` translation).                                             |
-| `subtitle`       | `string` — optional                                 | Header subtitle override (wins over the `lang` translation).                                          |
-| `theme`          | `"auto" \| "light" \| "dark"` — default `"auto"`    | `"auto"` mirrors `html.classList.contains("dark")` live (MutationObserver).                           |
-| `accent`         | `string` — optional                                 | Any CSS color; sets `--mpg-accent`.                                                                   |
-| `labels`         | `{ back?, next?, done?, openSettings? }`            | Per-key button label override (wins over the `lang` translation).                                     |
-| `onOpenSettings` | `() => void` — optional                             | When set on `*-webview` / `*-pwa` flavors, renders an "Open Settings" CTA.                            |
-| `onDone`         | `() => void` — optional                             | Fires when the user taps **Done** on the final step.                                                  |
+| Field            | Type                                                                                  | Description                                                                                                                                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `container`      | `HTMLElement` — **required**                                                          | Parent node. The guide is appended (not replaced).                                                                                                                                                                                                                                                                                                       |
+| `platform`       | `MicPlatformContext` — optional                                                       | Forwarded to `detectPlatform` to seed flavor detection.                                                                                                                                                                                                                                                                                                  |
+| `flavor`         | `MicReenableGuideFlavor` — optional                                                   | Override flavor directly. Wins over `platform`.                                                                                                                                                                                                                                                                                                          |
+| `lang`           | `MicReenableGuideLang \| "auto"` — default `"auto"`                                   | Built-in translation. `"auto"` reads `navigator.language`. Falls back to `"en"` if no built-in match.                                                                                                                                                                                                                                                    |
+| `steps`          | `MicReenableGuideStep[] \| ((ctx) => MicReenableGuideStep[])` — optional              | Step list. An **array** fully replaces text **and** art. A **builder** is called with `{ flavor, lang, defaultSteps }` (the `defaultSteps` already carry the built-in art) and returns the list — the zero-copy way to override only the text per flavor. Wins over `stepText`. See [Per-flavor step text](#per-flavor-step-text-keep-the-built-in-art). |
+| `stepText`       | `Partial<Record<MicReenableGuideFlavor, (string \| null \| undefined)[]>>` — optional | Declarative per-flavor **text** override, merged by index over the default steps (**art preserved**). `null` / `undefined` / a missing index keeps the built-in copy; entries past the flavor's step count are ignored (clamped). Lang-agnostic. Ignored when `steps` is also set.                                                                       |
+| `title`          | `string \| ((ctx) => string)` — optional                                              | Header title override — a string, or a `(ctx) => string` builder called with `{ flavor, lang, defaultText }` for flavor-aware copy. Wins over the `lang` translation. Rendered as **plain text** by the built-in chrome (use the `header` slot for HTML).                                                                                                |
+| `subtitle`       | `string \| ((ctx) => string)` — optional                                              | Header subtitle override — a string, or a `(ctx) => string` builder. Wins over the `lang` translation. Plain text in the built-in chrome (see `title`).                                                                                                                                                                                                  |
+| `theme`          | `"auto" \| "light" \| "dark"` — default `"auto"`                                      | `"auto"` mirrors `html.classList.contains("dark")` live (MutationObserver).                                                                                                                                                                                                                                                                              |
+| `accent`         | `string` — optional                                                                   | Any CSS color; sets `--mpg-accent`.                                                                                                                                                                                                                                                                                                                      |
+| `labels`         | `{ back?, next?, done?, openSettings? }`                                              | Per-key button label override (wins over the `lang` translation).                                                                                                                                                                                                                                                                                        |
+| `onOpenSettings` | `() => void` — optional                                                               | When set on `*-webview` / `*-pwa` flavors, renders an "Open Settings" CTA.                                                                                                                                                                                                                                                                               |
+| `onDone`         | `() => void` — optional                                                               | Fires when the user taps **Done** on the final step.                                                                                                                                                                                                                                                                                                     |
 
 **Returns:** `MicReenableGuide`
 
@@ -410,6 +413,100 @@ const guide = createMicReenableGuide({
 
 // later
 guide.destroy();
+```
+
+#### Per-flavor step text (keep the built-in art)
+
+You often want the library's flavor-correct **art, step count and navigation**
+but your **own brand wording**. Don't copy the SVGs — supply a `steps` **builder**
+(or the declarative `stepText` map) and the defaults hand you the art for free.
+
+```typescript
+const BROWSER_TEXTS_SK = [
+	"Ťuknite na ikonu <b>Informácie</b> v riadku, kde sa zadáva webová adresa.",
+	"Vyberte možnosť <b>Povolenia</b>.",
+	"<b>Povoľte mikrofón</b> a obnovte stránku.",
+];
+const isBrowser = (f: MicReenableGuideFlavor) =>
+	f === "desktop" || f === "ios-safari" || f === "android-chrome";
+
+createMicReenableGuide({
+	container,
+	lang: "sk",
+	// keep the built-in art, override only the text — per flavor, zero copy:
+	steps: ({ flavor, defaultSteps }) =>
+		isBrowser(flavor)
+			? defaultSteps.map((s, i) => ({ ...s, text: BROWSER_TEXTS_SK[i] ?? s.text }))
+			: defaultSteps, // webview / pwa keep the library copy + their own art
+	// header copy can be flavor-aware too (plain text — see note below):
+	subtitle: ({ flavor, defaultText }) =>
+		isBrowser(flavor) ? "Povoľte mikrofón v nastaveniach prehliadača." : defaultText,
+});
+```
+
+> **Note** — `step.text` (and `stepText`) is rendered as **trusted HTML** (so
+> `<b>…</b>` works), but the built-in chrome renders `title` / `subtitle` as
+> **plain text**. If you need markup in the header, use the `header` slot (or the
+> headless `createMicReenableGuideController` with your own markup), both of
+> which treat the copy as trusted HTML.
+
+The builder receives a resolved `MicReenableGuideStepsBuilderContext`:
+
+```typescript
+interface MicReenableGuideStepsBuilderContext {
+	flavor: MicReenableGuideFlavor; // resolved (never undefined)
+	lang: MicReenableGuideLang; // resolved (never "auto")
+	defaultSteps: MicReenableGuideStep[]; // built-in text + art for this flavor
+}
+```
+
+For the simple single-language case the declarative `stepText` map is shorter —
+it merges strings by index over the defaults and always preserves the art:
+
+```typescript
+createMicReenableGuide({
+	container,
+	lang: "sk",
+	stepText: {
+		desktop: BROWSER_TEXTS_SK,
+		"ios-safari": BROWSER_TEXTS_SK,
+		"android-chrome": BROWSER_TEXTS_SK,
+		// any flavor you omit keeps the built-in copy + art
+		// null / undefined at an index keeps that one step's built-in copy
+	},
+});
+```
+
+Notes:
+
+- An **array** `steps` is still a full replace of text **and** art (unchanged).
+- `steps` (array or builder) takes precedence over `stepText` if both are set.
+- `stepText` clamps to the flavor's default step count; changing the **number**
+  of steps stays the domain of the full `steps` array (new steps have no art).
+- Both forms run once at resolution time and see the concrete resolved `lang`.
+
+---
+
+### `defaultStepsFor(flavor, lang)`
+
+Return the library's built-in steps for a flavor + language — the resolved copy
+paired with the matching built-in art. This is what the guide renders absent any
+override, and what a `steps` builder receives as `defaultSteps`. Exported for
+fully-custom renderers (e.g. a native component on top of
+`createMicReenableGuideController`) that want the art + copy without copying any
+SVG markup.
+
+**Parameters:**
+
+- `flavor` (`MicReenableGuideFlavor`) — the flavor to resolve.
+- `lang` (`MicReenableGuideLang`) — a **concrete** language code (not `"auto"`).
+
+**Returns:** `MicReenableGuideStep[]` — a fresh array of fresh step objects
+(safe to mutate) carrying `{ text, art }`.
+
+```typescript
+const steps = defaultStepsFor("desktop", "en");
+// [{ text: "Click the …", art: "<svg …>" }, …]
 ```
 
 ---

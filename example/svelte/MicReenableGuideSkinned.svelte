@@ -1,26 +1,20 @@
 <!--
 	Approach (a): reskin the BUILT-IN guide via slots + CSS.
 
-	Works against the published @marianmeres/micperms (>= 2.2) — no library
-	changes required. Reuses flavor detection, step navigation, dots and the
-	SVG art; only the chrome (header/step/footer) + a CSS override are custom.
-	The close button lives in the `header` slot (the skin sets
-	`.mpg { position: relative }` so it can sit top-right).
+	Works against the published @marianmeres/micperms (>= 2.4) — no library
+	changes required. Reuses flavor detection, step count, navigation, dots and
+	the lib's own SVG art; only the chrome (header/step/footer) + a CSS override
+	are custom.
+
+	Brand copy is supplied via a `steps` BUILDER, so the library's flavor-correct
+	art comes for free (no SVG copied into this file) and WebView/PWA keep their
+	own art + step count. The close button lives in the `header` slot (the skin
+	sets `.mpg { position: relative }` so it can sit top-right).
 
 	This file is reference material — the micperms repo itself has no Svelte
 	build. Copy it into a Svelte 5 app (e.g. `src/lib/`).
 -->
 <script module lang="ts">
-	// Built-in desktop illustrations (address bar -> menu -> toggle), copied as
-	// strings. They reference --mpg-* CSS vars set by the skin below + the
-	// lib's own .mpg-pulse animation (present because we use the DOM factory).
-	const ART_ADDRESSBAR =
-		`<svg viewBox="0 0 320 158" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="28" y="22" width="264" height="92" rx="10" fill="var(--mpg-art-bg)" stroke="var(--mpg-line)"/><line x1="28" y1="48" x2="292" y2="48" stroke="var(--mpg-line)"/><circle cx="44" cy="35" r="4" fill="var(--mpg-art-soft)"/><circle cx="58" cy="35" r="4" fill="var(--mpg-art-soft)"/><circle cx="72" cy="35" r="4" fill="var(--mpg-art-soft)"/><rect x="44" y="66" width="232" height="32" rx="8" fill="var(--mpg-bg)" stroke="var(--mpg-line)"/><g class="mpg-pulse"><rect x="52" y="72" width="24" height="20" rx="5" fill="var(--mpg-accent-soft)"/><path d="M59 81 v-3 a5 5 0 0 1 10 0 v3" fill="none" stroke="var(--mpg-accent)" stroke-width="1.5"/><rect x="57" y="81" width="14" height="9" rx="1.6" fill="var(--mpg-accent)"/></g><rect x="86" y="77" width="170" height="10" rx="5" fill="var(--mpg-art-soft)"/><path d="M64 100 L64 118" stroke="var(--mpg-accent)" stroke-width="1.4" stroke-dasharray="3 3"/><circle cx="64" cy="121" r="3" fill="var(--mpg-accent)"/></svg>`;
-	const ART_MENU =
-		`<svg viewBox="0 0 320 158" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="78" y="22" width="164" height="114" rx="14" fill="var(--mpg-art-bg)" stroke="var(--mpg-line)"/><rect x="94" y="40" width="100" height="9" rx="4.5" fill="var(--mpg-art-soft)"/><rect x="94" y="66" width="120" height="9" rx="4.5" fill="var(--mpg-art-soft)"/><rect x="86" y="86" width="148" height="30" rx="8" fill="var(--mpg-accent-soft)" class="mpg-pulse"/><rect x="94" y="96" width="96" height="10" rx="5" fill="var(--mpg-accent)"/><path d="M214 101l5 5 9-10" stroke="var(--mpg-accent)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-	const ART_TOGGLE =
-		`<svg viewBox="0 0 320 158" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="58" y="56" width="204" height="46" rx="12" fill="var(--mpg-art-bg)" stroke="var(--mpg-line)"/><rect x="74" y="74" width="86" height="10" rx="5" fill="var(--mpg-fg)"/><rect x="196" y="69" width="52" height="20" rx="10" fill="#34c759" class="mpg-pulse"/><circle cx="238" cy="79" r="8.5" fill="#fff"/></svg>`;
-
 	const SKIN_ID = "mpg-skin-styles";
 	const SKIN_CSS = `
 .mpg-skin .mpg {
@@ -57,6 +51,17 @@
 		style.textContent = SKIN_CSS;
 		document.head.appendChild(style);
 	}
+
+	// Slovak brand copy for the BROWSER flow (address bar → menu → toggle).
+	// WebView/PWA flavors deliberately keep the library's own copy + art below.
+	const BROWSER_TEXTS_SK = [
+		"Ťuknite na ikonu <b>Informácie</b> v riadku, kde sa zadáva webová adresa.",
+		"Vyberte možnosť <b>Povolenia</b>.",
+		"<b>Povoľte mikrofón</b> a obnovte stránku.",
+	];
+
+	const isBrowserFlavor = (f: string) =>
+		f === "desktop" || f === "ios-safari" || f === "android-chrome";
 </script>
 
 <script lang="ts">
@@ -79,15 +84,6 @@
 	} = $props();
 
 	let host: HTMLDivElement;
-
-	const STEPS = [
-		{
-			text: "Ťuknite na ikonu <b>Informácie</b> v riadku, kde sa zadáva webová adresa.",
-			art: ART_ADDRESSBAR,
-		},
-		{ text: "Vyberte možnosť <b>Povolenia</b>.", art: ART_MENU },
-		{ text: "<b>Povoľte mikrofón</b> a obnovte stránku.", art: ART_TOGGLE },
-	];
 
 	function header(ctx: MicReenableGuideRenderContext): Node {
 		const wrap = document.createElement("div");
@@ -148,10 +144,22 @@
 			accent,
 			lang: "sk",
 			title: "Povoľte používanie mikrofónu",
-			subtitle:
-				"Ak sa chcete s poradkyňou rozprávať, povoľte používanie mikrofónu v <b>nastaveniach prehliadača</b>.",
+			// flavor-aware subtitle — browser vs in-app settings:
+			subtitle: ({ flavor }) =>
+				isBrowserFlavor(flavor)
+					? "Ak sa chcete s poradkyňou rozprávať, povoľte používanie mikrofónu v <b>nastaveniach prehliadača</b>."
+					: "Ak sa chcete s poradkyňou rozprávať, povoľte používanie mikrofónu v <b>nastaveniach aplikácie</b>.",
 			labels: { next: "Ďalej", done: "Dokončiť" },
-			steps: STEPS,
+			// Override only the TEXT for browser flavors; the builder's
+			// `defaultSteps` already carry the lib's flavor-correct art, so
+			// WebView/PWA keep their own copy, art AND step count.
+			steps: ({ flavor, defaultSteps }) =>
+				isBrowserFlavor(flavor)
+					? defaultSteps.map((s, i) => ({
+							...s,
+							text: BROWSER_TEXTS_SK[i] ?? s.text,
+						}))
+					: defaultSteps,
 			onDone,
 			onOpenSettings,
 			slots: { header, step, footer },

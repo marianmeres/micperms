@@ -38,6 +38,69 @@ export interface MicReenableGuideStep {
 	art?: string | SVGElement;
 }
 
+/**
+ * Context handed to a {@linkcode MicReenableGuideStepsInput} builder. Lets you
+ * transform the library's resolved default steps instead of replacing them —
+ * the canonical "override the text, keep the built-in art" hook.
+ */
+export interface MicReenableGuideStepsBuilderContext {
+	/** Resolved flavor (never undefined). */
+	flavor: MicReenableGuideFlavor;
+	/** Resolved language — already concrete, never `"auto"`. */
+	lang: MicReenableGuideLang;
+	/**
+	 * The library's default steps for this `flavor` + `lang`, with both the
+	 * built-in copy **and** art already resolved. Map over these to keep the
+	 * art while overriding `text`.
+	 */
+	defaultSteps: MicReenableGuideStep[];
+}
+
+/**
+ * The `steps` option. Either:
+ *
+ * - a literal {@linkcode MicReenableGuideStep} list — a **full replace** of
+ *   both text and art, or
+ * - a **builder** `(ctx) => MicReenableGuideStep[]` called with the resolved
+ *   {@linkcode MicReenableGuideStepsBuilderContext} (whose `defaultSteps`
+ *   carry the built-in art), so you can override only the text per flavor
+ *   without copying any SVG.
+ */
+export type MicReenableGuideStepsInput =
+	| MicReenableGuideStep[]
+	| ((ctx: MicReenableGuideStepsBuilderContext) => MicReenableGuideStep[]);
+
+/**
+ * Declarative per-flavor **text** override. Each entry is merged by index over
+ * the resolved default steps; the built-in **art is always preserved**.
+ * `null` / `undefined` / a missing index keeps the default copy, and entries
+ * past the flavor's default step count are ignored (clamped). Lang-agnostic —
+ * supply strings in whatever language you set. For multi-language consumers
+ * prefer the {@linkcode MicReenableGuideStepsInput} builder.
+ */
+export type MicReenableGuideStepTextOverride = Partial<
+	Record<MicReenableGuideFlavor, readonly (string | null | undefined)[]>
+>;
+
+/** Context handed to a {@linkcode MicReenableGuideTextInput} builder. */
+export interface MicReenableGuideTextBuilderContext {
+	/** Resolved flavor (never undefined). */
+	flavor: MicReenableGuideFlavor;
+	/** Resolved language — already concrete, never `"auto"`. */
+	lang: MicReenableGuideLang;
+	/** The library's default copy for this field (the resolved translation). */
+	defaultText: string;
+}
+
+/**
+ * A header-copy option (`title` / `subtitle`). Either a plain string or a
+ * **builder** `(ctx) => string` called with the resolved
+ * {@linkcode MicReenableGuideTextBuilderContext} for flavor-aware wording.
+ */
+export type MicReenableGuideTextInput =
+	| string
+	| ((ctx: MicReenableGuideTextBuilderContext) => string);
+
 // ---------------------------------------------------------------------------
 // Slot types — vanilla equivalent of Svelte snippets / React render props.
 // Each slot is `(ctx) => Node | string | void`. Returning a Node mounts it
@@ -82,8 +145,7 @@ export interface MicReenableGuideRenderContext {
 }
 
 /** Context for the per-button slot. */
-export interface MicReenableGuideButtonContext
-	extends MicReenableGuideRenderContext {
+export interface MicReenableGuideButtonContext extends MicReenableGuideRenderContext {
 	/** Which logical button this is. */
 	role: "back" | "next" | "done" | "open-settings";
 	/** Resolved label for this role. */
@@ -144,13 +206,35 @@ export interface MicReenableGuideOptions {
 	 */
 	lang?: MicReenableGuideLang | "auto";
 
-	/** Replace the auto-generated step list entirely. */
-	steps?: MicReenableGuideStep[];
+	/**
+	 * Step list. Either a literal array (full replace of text **and** art) or
+	 * a builder `(ctx) => MicReenableGuideStep[]` that transforms the resolved
+	 * `ctx.defaultSteps` (which already carry the built-in art) — the
+	 * zero-copy way to override only the text per flavor. Takes precedence
+	 * over {@linkcode steps}'s declarative sibling {@linkcode stepText}.
+	 * See {@linkcode MicReenableGuideStepsInput}.
+	 */
+	steps?: MicReenableGuideStepsInput;
 
-	/** Override the header title. */
-	title?: string;
-	/** Override the header subtitle. */
-	subtitle?: string;
+	/**
+	 * Declarative per-flavor text override, merged by index over the default
+	 * steps (art always preserved). Convenience for the common
+	 * single-language "just change the words" case; ignored when
+	 * {@linkcode steps} is also set. See
+	 * {@linkcode MicReenableGuideStepTextOverride}.
+	 */
+	stepText?: MicReenableGuideStepTextOverride;
+
+	/**
+	 * Override the header title. A string, or a builder `(ctx) => string` for
+	 * flavor-aware copy. See {@linkcode MicReenableGuideTextInput}.
+	 */
+	title?: MicReenableGuideTextInput;
+	/**
+	 * Override the header subtitle. A string, or a builder `(ctx) => string`
+	 * for flavor-aware copy. See {@linkcode MicReenableGuideTextInput}.
+	 */
+	subtitle?: MicReenableGuideTextInput;
 
 	/**
 	 * Theme. `"auto"` (default) reads
@@ -492,7 +576,22 @@ function resolveLang(
 	return "en";
 }
 
-function defaultStepsFor(
+/**
+ * The library's built-in steps for a given flavor + language — the resolved
+ * default copy paired with the matching built-in art. This is what the guide
+ * renders when no `steps` / `stepText` override is supplied, and what a
+ * {@linkcode MicReenableGuideStepsInput} builder receives as `defaultSteps`.
+ *
+ * Exposed for fully-custom renderers (e.g. a native Svelte/React component on
+ * top of {@linkcode createMicReenableGuideController}) that want the art +
+ * copy for an arbitrary flavor without copying any SVG markup. `lang` must be
+ * a concrete code (resolve `"auto"` via {@linkcode detectFlavor}'s companion
+ * detection first — the controller does this for you).
+ *
+ * A fresh array of fresh step objects is returned on every call, so callers
+ * may mutate the result freely.
+ */
+export function defaultStepsFor(
 	flavor: MicReenableGuideFlavor,
 	lang: MicReenableGuideLang,
 ): MicReenableGuideStep[] {
@@ -523,12 +622,22 @@ export interface MicReenableGuideControllerOptions {
 	flavor?: MicReenableGuideFlavor;
 	/** Built-in translation to use. Defaults to `"auto"`. */
 	lang?: MicReenableGuideLang | "auto";
-	/** Replace the auto-generated step list entirely. */
-	steps?: MicReenableGuideStep[];
-	/** Override the header title. */
-	title?: string;
-	/** Override the header subtitle. */
-	subtitle?: string;
+	/**
+	 * Step list — a literal array (full replace) or a builder transforming the
+	 * resolved `ctx.defaultSteps` (keeps the built-in art). Wins over
+	 * {@linkcode stepText}. See {@linkcode MicReenableGuideStepsInput}.
+	 */
+	steps?: MicReenableGuideStepsInput;
+	/**
+	 * Declarative per-flavor text override, merged by index over the defaults
+	 * (art preserved). Ignored when {@linkcode steps} is set. See
+	 * {@linkcode MicReenableGuideStepTextOverride}.
+	 */
+	stepText?: MicReenableGuideStepTextOverride;
+	/** Override the header title (string or `(ctx) => string` builder). */
+	title?: MicReenableGuideTextInput;
+	/** Override the header subtitle (string or `(ctx) => string` builder). */
+	subtitle?: MicReenableGuideTextInput;
 	/** Localized button labels. */
 	labels?: {
 		back?: string;
@@ -614,6 +723,61 @@ interface ResolvedGuideConfig {
 }
 
 /**
+ * Resolve the final step list from the raw `steps` / `stepText` options for an
+ * already-resolved flavor + lang. Precedence: a `steps` builder, then a
+ * `steps` array (both a full replace), then the declarative `stepText` map
+ * merged by index over the defaults (art preserved, extras clamped), then the
+ * built-in defaults.
+ */
+function resolveSteps(
+	opts: MicReenableGuideControllerOptions,
+	flavor: MicReenableGuideFlavor,
+	lang: MicReenableGuideLang,
+): MicReenableGuideStep[] {
+	// A `steps` builder/array wins over the declarative `stepText` map.
+	if (typeof opts.steps === "function") {
+		const out = opts.steps({
+			flavor,
+			lang,
+			defaultSteps: defaultStepsFor(flavor, lang),
+		});
+		if (!Array.isArray(out)) {
+			throw new Error(
+				"createMicReenableGuide: `steps` builder must return an array",
+			);
+		}
+		return out;
+	}
+	if (opts.steps !== undefined) return opts.steps;
+
+	// Declarative per-flavor text override: merge by index over the defaults.
+	// `null` / `undefined` / a missing index keeps the built-in copy; mapping
+	// over `defaultSteps` naturally clamps any extra entries.
+	const texts = opts.stepText?.[flavor];
+	if (texts && texts.length) {
+		return defaultStepsFor(flavor, lang).map((step, i) => {
+			const text = texts[i];
+			return text == null ? step : { ...step, text };
+		});
+	}
+
+	return defaultStepsFor(flavor, lang);
+}
+
+/** Resolve a header-copy field (`title` / `subtitle`) — string or builder. */
+function resolveText(
+	input: MicReenableGuideTextInput | undefined,
+	flavor: MicReenableGuideFlavor,
+	lang: MicReenableGuideLang,
+	defaultText: string,
+): string {
+	if (typeof input === "function") {
+		return input({ flavor, lang, defaultText });
+	}
+	return input ?? defaultText;
+}
+
+/**
  * Resolve flavor, language, step list, header copy, labels and the
  * settings-CTA flag from raw options. Shared by the controller and the
  * built-in DOM factory so resolution lives in exactly one place.
@@ -628,7 +792,7 @@ function resolveGuideConfig(
 	const lang = resolveLang(opts.lang);
 	const chrome = CHROME_TEXTS[lang];
 
-	const steps = opts.steps ?? defaultStepsFor(flavor, lang);
+	const steps = resolveSteps(opts, flavor, lang);
 	if (steps.length === 0) {
 		throw new Error("createMicReenableGuide: `steps` must not be empty");
 	}
@@ -637,8 +801,8 @@ function resolveGuideConfig(
 		flavor,
 		lang,
 		steps,
-		title: opts.title ?? chrome.title,
-		subtitle: opts.subtitle ?? chrome.subtitle,
+		title: resolveText(opts.title, flavor, lang, chrome.title),
+		subtitle: resolveText(opts.subtitle, flavor, lang, chrome.subtitle),
 		labels: {
 			back: opts.labels?.back ?? chrome.back,
 			next: opts.labels?.next ?? chrome.next,
@@ -872,6 +1036,7 @@ export function createMicReenableGuide(
 		flavor: opts.flavor,
 		lang: opts.lang,
 		steps: opts.steps,
+		stepText: opts.stepText,
 		title: opts.title,
 		subtitle: opts.subtitle,
 		labels: opts.labels,

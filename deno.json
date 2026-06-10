@@ -5,6 +5,14 @@
     ".": "./src/mod.ts",
     "./mic-reenable-guide": "./src/mic-reenable-guide.ts"
   },
+  "publish": {
+    "exclude": [
+      ".claude/",
+      "tests/",
+      "example/",
+      "scripts/"
+    ]
+  },
   "tasks": {
     "test": "deno test",
     "test:watch": "deno test --watch",
@@ -18,6 +26,7 @@
     "build:example:watch": "deno run -A jsr:@marianmeres/deno-build --outdir example/dist --watch"
   },
   "imports": {
+    "@b-fuze/deno-dom": "jsr:@b-fuze/deno-dom@^0.1.56",
     "@marianmeres/clog": "jsr:@marianmeres/clog@^3.21.0",
     "@marianmeres/store": "jsr:@marianmeres/store@^3.0.1",
     "@marianmeres/npmbuild": "jsr:@marianmeres/npmbuild@^1.16.0",

@@ -160,6 +160,36 @@ and follows `html.classList.contains("dark")` for light/dark theme by default. S
 and [example/mic-reenable-guide.html](example/mic-reenable-guide.html) for a live
 playground (run `deno task build:example` first).
 
+### Brand wording, built-in art
+
+Want the flavor-correct illustrations and step count but your own copy? Don't
+copy the SVGs — pass a `steps` **builder**. The resolved `defaultSteps` already
+carry the art, so you override only the text, per flavor, with zero copy/paste:
+
+```typescript
+import { createMicReenableGuide } from "@marianmeres/micperms/mic-reenable-guide";
+
+const BROWSER_TEXTS_SK = [
+	"Ťuknite na ikonu <b>Informácie</b> v riadku, kde sa zadáva webová adresa.",
+	"Vyberte možnosť <b>Povolenia</b>.",
+	"<b>Povoľte mikrofón</b> a obnovte stránku.",
+];
+
+createMicReenableGuide({
+	container: document.getElementById("mic-help"),
+	lang: "sk",
+	steps: ({ flavor, defaultSteps }) =>
+		flavor === "desktop" || flavor === "ios-safari" || flavor === "android-chrome"
+			? defaultSteps.map((s, i) => ({ ...s, text: BROWSER_TEXTS_SK[i] ?? s.text }))
+			: defaultSteps, // webview / pwa keep the library copy + their own art
+});
+```
+
+A literal `steps` array is still a full replace (text **and** art). For the
+simple single-language case there's also a declarative `stepText` map, and
+`title` / `subtitle` accept the same `(ctx) => string` builder shape. See
+[API.md — Per-flavor step text](API.md#per-flavor-step-text-keep-the-built-in-art).
+
 ## API
 
 See [API.md](API.md) for complete API documentation.

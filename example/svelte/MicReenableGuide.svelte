@@ -1,6 +1,7 @@
 <!--
 	Approach (b): fully native Svelte rendering on top of the HEADLESS
-	controller (`createMicReenableGuideController`, micperms >= 2.3).
+	controller (`createMicReenableGuideController`, micperms >= 2.3; the `steps`
+	builder / `stepText` / header builders forwarded below need >= 2.4).
 
 	You own 100% of the markup; the lib supplies flavor detection, default copy
 	and step navigation. `fromStore` bridges the controller (which implements
@@ -17,12 +18,16 @@
 		type MicReenableGuideFlavor,
 		type MicReenableGuideLang,
 		type MicReenableGuideStep,
+		type MicReenableGuideStepsInput,
+		type MicReenableGuideStepTextOverride,
+		type MicReenableGuideTextInput,
 	} from "@marianmeres/micperms/mic-reenable-guide";
 
 	let {
 		flavor,
 		lang = "auto",
 		steps,
+		stepText,
 		title,
 		subtitle,
 		labels,
@@ -33,9 +38,12 @@
 	}: {
 		flavor?: MicReenableGuideFlavor;
 		lang?: MicReenableGuideLang | "auto";
-		steps?: MicReenableGuideStep[];
-		title?: string;
-		subtitle?: string;
+		// array OR a `(ctx) => steps` builder (keeps the built-in art) — see lib docs
+		steps?: MicReenableGuideStepsInput;
+		// declarative per-flavor text override (art preserved); ignored if `steps` set
+		stepText?: MicReenableGuideStepTextOverride;
+		title?: MicReenableGuideTextInput;
+		subtitle?: MicReenableGuideTextInput;
 		labels?: { back?: string; next?: string; done?: string; openSettings?: string };
 		accent?: string;
 		onClose?: () => void;
@@ -50,6 +58,7 @@
 			flavor,
 			lang,
 			steps,
+			stepText,
 			title,
 			subtitle,
 			labels,

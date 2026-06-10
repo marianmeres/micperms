@@ -51,13 +51,16 @@ tracks are stopped immediately.
 
 ### Extras subpath (`@marianmeres/micperms/mic-reenable-guide`)
 
-| Export                                   | Type    | Purpose                                                                          |
-| ---------------------------------------- | ------- | -------------------------------------------------------------------------------- |
-| `createMicReenableGuide(opts)`           | Factory | Mounts a pure-DOM multi-step tutorial into a host container; flavor/theme aware. |
+| Export                                   | Type    | Purpose                                                                                                                                                                                                                                     |
+| ---------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createMicReenableGuide(opts)`           | Factory | Mounts a pure-DOM multi-step tutorial into a host container; flavor/theme aware.                                                                                                                                                            |
 | `createMicReenableGuideController(opts)` | Factory | **Headless** state machine (no DOM): resolved steps/i18n/flavor + `next/back/goto/done/openSettings` + Svelte-compatible `subscribe`. Render the markup yourself (Svelte/React/vanilla). The DOM factory is itself just one consumer of it. |
-| `detectFlavor(opts?)`                    | Helper  | Returns `MicReenableGuideFlavor` (iOS/Android/desktop × browser/PWA/WebView).    |
+| `detectFlavor(opts?)`                    | Helper  | Returns `MicReenableGuideFlavor` (iOS/Android/desktop × browser/PWA/WebView).                                                                                                                                                               |
+| `defaultStepsFor(flavor, lang)`          | Helper  | The library's built-in steps (resolved copy + built-in art) for a flavor + concrete lang. What a `steps` builder receives as `defaultSteps`.                                                                                                |
 
 > Slots vs. headless: `createMicReenableGuide` already takes `slots` (`header`/`art`/`step`/`button`/`footer`) + `accent` + CSS-var overrides for skinning the built-in chrome. Reach for `createMicReenableGuideController` only when you want to own 100% of the DOM (e.g. a native Svelte component) while keeping flavor detection, default copy and navigation.
+
+> Per-flavor brand copy (keep the built-in art): `steps` accepts either an array (full replace) **or** a builder `({ flavor, lang, defaultSteps }) => MicReenableGuideStep[]` — map over `defaultSteps` (which carry the art) to override only the text, per flavor, with zero SVG copying. A declarative `stepText` map (`Partial<Record<flavor, (string|null)[]>>`, merged by index, art preserved, ignored if `steps` is set) is the single-language shorthand. `title`/`subtitle` likewise accept a `(ctx) => string` builder. Resolution lives once in `resolveGuideConfig` (`resolveSteps`/`resolveText`), so the controller and the DOM factory both benefit.
 
 ### MicPerms instance methods
 
