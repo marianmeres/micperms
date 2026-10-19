@@ -22,6 +22,7 @@
 				grid-template-columns: 1fr;
 				gap: 20px;
 				place-items: start center;
+				align-content: start;
 			}
 			html.dark body {
 				background: #000;
@@ -175,6 +176,10 @@
 				background: #2c2c2e;
 				color: #aaa;
 			}
+			.version {
+				font-size: 14px;
+				color: #8e8e93;
+			}
 		</style>
 	</head>
 	<body>
@@ -243,9 +248,13 @@
 		</div>
 
 		<div id="mount"></div>
+		<footer class="version" id="version"></footer>
 
 		<script type="module">
 			import { createMicReenableGuide, detectFlavor } from "./dist/guide.js";
+			import { VERSION } from "./dist/version.js";
+
+			document.getElementById("version").textContent = `@marianmeres/micperms v${VERSION}`;
 
 			const mount = document.getElementById("mount");
 			const logEl = document.getElementById("log");

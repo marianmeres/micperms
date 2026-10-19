@@ -41,6 +41,11 @@
 				font-size: 1.25rem;
 				font-weight: 700;
 			}
+			h1 .version {
+				font-size: 0.9rem;
+				font-weight: 400;
+				opacity: 0.5;
+			}
 			h2 {
 				font-size: 0.9rem;
 				font-weight: 600;
@@ -160,7 +165,7 @@
 	</head>
 	<body>
 		<div class="header">
-			<h1>Mic Permission Test</h1>
+			<h1>Mic Permission Test <span class="version" id="version"></span></h1>
 			<span
 				id="platform-badge"
 				style="font-size: 0.9rem; opacity: 0.5"
@@ -241,6 +246,9 @@
 				createMicPerms,
 				detectPlatform,
 			} from "./dist/bundle.js";
+			import { VERSION } from "./dist/version.js";
+
+			document.getElementById("version").textContent = `v${VERSION}`;
 
 			// ---------------------------------------------------------------------------
 			// Log

@@ -20,6 +20,8 @@
   guide.html              — Playground for the tutorial extras
 /scripts
   build-npm.ts            — NPM package build script
+  gen-example-version.ts  — Writes example/dist/version.js (run by build:example,
+                            hence by the release --before-commit hook)
 ```
 
 ## What This Library Does
