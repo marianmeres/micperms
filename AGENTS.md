@@ -17,7 +17,7 @@
   micperms.test.ts        — Unit tests with mock adapter
 /example
   index.html              — Vanilla JS demo page (core)
-  mic-reenable-guide.html — Playground for the tutorial extras
+  guide.html              — Playground for the tutorial extras
 /scripts
   build-npm.ts            — NPM package build script
 ```
